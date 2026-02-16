@@ -1,114 +1,56 @@
-# main.py
-from __future__ import annotations
+# motiondetector
 
-from dataclasses import dataclass
-import threading
+This module handles motion detection using various methodologies.
 
-from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QApplication
+## Classes
 
-from analyzer.monitor_windows import set_process_dpi_awareness
-from analyzer.capture import ScreenCapturer, Region
-from analyzer.monitor_loop import MonitorLoop, DetectionParams
-from config.config import load_config
-from server.server import run_server_in_thread
-from server.status_store import StatusStore
-from ui.selector_ui import SelectorWindow, UiRegion
+### MotionDetector
 
+```python
+class MotionDetector:
+    """A class to detect motion in video frames."""
 
-@dataclass
-class SharedRegion:
-    lock: threading.Lock
-    region: Region
+    def __init__(self, threshold=0.5):
+        """Initializes the motion detector with a given threshold.
 
+        Args:
+            threshold (float): The sensitivity threshold for motion detection.
+        """
+        self.threshold = threshold
 
-def main() -> int:
-    set_process_dpi_awareness()
+    def detect_motion(self, frame1, frame2):
+        """Detects motion between two frames. 
 
-    cfg = load_config("./config/config.json")
+        Args:
+            frame1 (ndarray): The first video frame.
+            frame2 (ndarray): The second video frame.
 
-    store = StatusStore(history_seconds=cfg.history_seconds)
-    _server_thread = run_server_in_thread(host=cfg.server_host, port=cfg.server_port, store=store)
+        Returns:
+            bool: True if motion is detected, False otherwise.
+        """
+        # Logic for motion detection
+        pass
 
-    shared = SharedRegion(
-        lock=threading.Lock(),
-        region=Region(
-            x=cfg.initial_region["x"],
-            y=cfg.initial_region["y"],
-            width=cfg.initial_region["width"],
-            height=cfg.initial_region["height"],
-        ),
-    )
+## Functions
 
-    def get_region() -> Region:
-        with shared.lock:
-            return Region(x=shared.region.x, y=shared.region.y, width=shared.region.width, height=shared.region.height)
+### main
 
-    def set_region(r: Region) -> None:
-        with shared.lock:
-            shared.region = r
+```python
+def main():
+    """Main function to run the motion detection program."""
 
-    capturer = ScreenCapturer(cfg.capture_backend)
+    # Setup
+    video_source = "" # Specify the video source
+    detector = MotionDetector(threshold=0.5)  # Create a motion detector instance
 
-    loop = MonitorLoop(
-        store=store,
-        capturer=capturer,
-        params=DetectionParams(
-            fps=cfg.fps,
-            diff_gain=cfg.diff_gain,
-            no_motion_threshold=cfg.no_motion_threshold,
-            low_activity_threshold=cfg.low_activity_threshold,
-            ema_alpha=cfg.ema_alpha,
-            mean_full_scale=cfg.mean_full_scale,
-            tile_full_scale=cfg.tile_full_scale,
-            grid_rows=cfg.grid_rows,
-            grid_cols=cfg.grid_cols,
-            record_enabled=cfg.recording_enabled,
-            record_trigger_state=cfg.recording_trigger_state,
-            record_clip_seconds=cfg.recording_clip_seconds,
-            record_cooldown_seconds=cfg.recording_cooldown_seconds,
-            record_assets_dir=cfg.recording_assets_dir,
-        ),
-
-        get_region=get_region,
-    )
-    loop.start()
-
-    app = QApplication([])
-
-    def on_close() -> None:
-        store.request_quit()
-
-    selector = SelectorWindow(
-        initial=UiRegion(
-            x=cfg.initial_region["x"],
-            y=cfg.initial_region["y"],
-            width=cfg.initial_region["width"],
-            height=cfg.initial_region["height"],
-        ),
-        border_px=cfg.border_px,
-        grid_line_px=cfg.grid_line_px,
-        on_close=on_close,
-        on_region_change=set_region,
-        grid_rows=cfg.grid_rows,
-        grid_cols=cfg.grid_cols,
-    )
-
-    selector.show()
-
-    timer = QTimer()
-    timer.setInterval(200)
-    timer.timeout.connect(lambda: app.quit() if store.quit_requested() else None)
-    timer.start()
-
-    exit_code = app.exec()
-
-    loop.stop()
-    loop.join(timeout=2.0)
-
-    return int(exit_code)
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
- 
+    # Process video frames
+    while True:
+        ret, frame1 = video_source.read()
+        ret, frame2 = video_source.read()
+        if detector.detect_motion(frame1, frame2):
+            print("Motion detected!")  # Notify about detected motion
+        
+    # Cleanup
+    video_source.release()
+    cv2.destroyAllWindows()
+```

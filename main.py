@@ -90,7 +90,10 @@ def main() -> int:
         grid_line_px=cfg.grid_line_px,
         on_close=on_close,
         on_region_change=set_region,
+        grid_rows=cfg.grid_rows,
+        grid_cols=cfg.grid_cols,
     )
+
     selector.show()
 
     timer = QTimer()

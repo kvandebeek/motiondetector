@@ -311,6 +311,15 @@ function drawChart(historyPayloads) {{
   ctx.fillText('0.0', 10, h - 20);
 }}
 
+function edges(size, parts) {{
+  // Integer-stable boundaries to avoid drift/clipping with many tiles.
+  const out = new Array(parts + 1);
+  for (let i = 0; i <= parts; i++) out[i] = Math.round((i * size) / parts);
+  out[0] = 0;
+  out[parts] = size;
+  return out;
+}}
+
 function drawTilesHeatmap(payload) {{
   const canvas = document.getElementById('tilesHeatmap');
   const ctx = canvas.getContext('2d');
@@ -327,6 +336,7 @@ function drawTilesHeatmap(payload) {{
 
   const dpr = window.devicePixelRatio || 1;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.imageSmoothingEnabled = false;
 
   const cssW = canvas.width / dpr;
   const cssH = canvas.height / dpr;
@@ -342,31 +352,42 @@ function drawTilesHeatmap(payload) {{
     return;
   }}
 
-  const cellW = cssW / cols;
-  const cellH = cssH / rows;
+  const xEdges = edges(cssW, cols);
+  const yEdges = edges(cssH, rows);
 
   for (let r = 0; r < rows; r++) {{
+    const y0 = yEdges[r];
+    const y1 = yEdges[r + 1];
+    const hh = y1 - y0;
     for (let c = 0; c < cols; c++) {{
+      const x0 = xEdges[c];
+      const x1 = xEdges[c + 1];
+      const ww = x1 - x0;
+
       const idx = r * cols + c;
       const v = clamp01(Number(tiles[idx]) || 0);
+
       ctx.fillStyle = colorFor01(v);
-      ctx.fillRect(c * cellW, r * cellH, cellW, cellH);
+      ctx.fillRect(x0, y0, ww, hh);
     }}
   }}
 
+  // grid lines on exact edges (no drift)
   ctx.strokeStyle = 'rgba(0,0,0,0.25)';
   ctx.lineWidth = 1;
 
   for (let c = 1; c < cols; c++) {{
+    const x = xEdges[c];
     ctx.beginPath();
-    ctx.moveTo(c * cellW, 0);
-    ctx.lineTo(c * cellW, cssH);
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, cssH);
     ctx.stroke();
   }}
   for (let r = 1; r < rows; r++) {{
+    const y = yEdges[r];
     ctx.beginPath();
-    ctx.moveTo(0, r * cellH);
-    ctx.lineTo(cssW, r * cellH);
+    ctx.moveTo(0, y);
+    ctx.lineTo(cssW, y);
     ctx.stroke();
   }}
 }}

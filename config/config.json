@@ -5,18 +5,18 @@
   },
   "capture": {
     "backend": "MSS",
-    "fps": 5
+    "fps": 10
   },
   "motion": {
-    "diff_gain": 1.25,
+    "diff_gain": 1.2,
     "no_motion_threshold": 0.055,
     "low_activity_threshold": 0.085,
     "ema_alpha": 0.10,
     "history_seconds": 120,
     "mean_full_scale": 0.08,
     "tile_full_scale": 0.16,
-    "grid_cols": 25,
-    "grid_rows": 25
+    "grid_cols": 40,
+    "grid_rows": 40
   },
   "recording": {
     "enabled": true,

@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import threading
 import time
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -37,6 +37,9 @@ class DetectionParams:
     record_assets_dir: str
     record_stop_grace_seconds: int = 10  # NEW
 
+    # NEW: inset inside the captured region before computing diff/tiles
+    analysis_inset_px: int = 10
+
 
 def _to_gray_u8(frame_bgra: np.ndarray) -> np.ndarray:
     if frame_bgra.ndim != 3 or frame_bgra.shape[2] != 4:
@@ -58,23 +61,37 @@ def _clamp01(x: float) -> float:
     return 0.0 if x < 0.0 else 1.0 if x > 1.0 else x
 
 
+def _edges(size: int, parts: int) -> List[int]:
+    if size < 0:
+        raise ValueError("size must be >= 0")
+    if parts <= 0:
+        raise ValueError("parts must be > 0")
+    out = [int(round(i * size / parts)) for i in range(parts + 1)]
+    out[0] = 0
+    out[parts] = int(size)
+    for i in range(1, len(out)):
+        if out[i] < out[i - 1]:
+            out[i] = out[i - 1]
+    return out
+
+
 def _tile_means(diff_u8: np.ndarray, *, rows: int, cols: int) -> List[float]:
     if rows <= 0 or cols <= 0:
         raise ValueError("grid_rows and grid_cols must be > 0")
 
     h, w = diff_u8.shape
-    tile_h = max(1, h // rows)
-    tile_w = max(1, w // cols)
+    x_edges = _edges(w, cols)
+    y_edges = _edges(h, rows)
 
     out: List[float] = []
     for r in range(rows):
+        y0 = y_edges[r]
+        y1 = y_edges[r + 1]
         for c in range(cols):
-            y0 = r * tile_h
-            x0 = c * tile_w
-            y1 = (r + 1) * tile_h if r < rows - 1 else h
-            x1 = (c + 1) * tile_w if c < cols - 1 else w
+            x0 = x_edges[c]
+            x1 = x_edges[c + 1]
             tile = diff_u8[y0:y1, x0:x1]
-            out.append(float(tile.mean() / 255.0))
+            out.append(float(tile.mean() / 255.0) if tile.size else 0.0)
     return out
 
 
@@ -91,6 +108,51 @@ def _tiles_named(tiles: List[float], *, rows: int, cols: int) -> Dict[str, float
     if len(tiles) != n:
         raise ValueError(f"tiles length {len(tiles)} != rows*cols {n} (rows={rows}, cols={cols})")
     return {f"t{i + 1}": float(tiles[i]) for i in range(n)}
+
+
+def _detect_dead_top_rows(diff_u8: np.ndarray, *, rows: int, max_rows: int = 5) -> Tuple[int, float, float, float]:
+    h = int(diff_u8.shape[0])
+    tile_h = max(1, h // max(rows, 1))
+
+    def band_mean(i: int) -> float:
+        y0 = i * tile_h
+        y1 = min(h, (i + 1) * tile_h)
+        if y0 >= h or y1 <= y0:
+            return 0.0
+        return float(diff_u8[y0:y1, :].mean())
+
+    b1 = band_mean(0)
+    b2 = band_mean(1)
+    b3 = band_mean(2)
+
+    limit = max(0, min(int(max_rows), rows - 1))
+    dead = 0
+    for i in range(limit):
+        if band_mean(i) == 0.0:
+            dead += 1
+        else:
+            break
+
+    return dead, b1, b2, b3
+
+
+def _apply_inset(gray: np.ndarray, inset_px: int) -> Tuple[np.ndarray, Dict[str, int]]:
+    inset = max(0, int(inset_px))
+    if inset == 0:
+        h, w = gray.shape
+        return gray, {"x": 0, "y": 0, "width": int(w), "height": int(h)}
+
+    h, w = gray.shape
+    x0 = min(w, inset)
+    y0 = min(h, inset)
+    x1 = max(x0, w - inset)
+    y1 = max(y0, h - inset)
+
+    if x1 - x0 < 1 or y1 - y0 < 1:
+        return gray, {"x": 0, "y": 0, "width": int(w), "height": int(h)}
+
+    roi = gray[y0:y1, x0:x1]
+    return roi, {"x": int(x0), "y": int(y0), "width": int(x1 - x0), "height": int(y1 - y0)}
 
 
 class MonitorLoop:
@@ -178,16 +240,18 @@ class MonitorLoop:
                 pass
 
     def _process_frame(self, *, frame: np.ndarray, ts: float, region: Region) -> Dict:
-        gray = _to_gray_u8(frame)
+        gray_full = _to_gray_u8(frame)
 
         rows = int(self._params.grid_rows)
         cols = int(self._params.grid_cols)
+
+        gray, inset_rect = _apply_inset(gray_full, int(getattr(self._params, "analysis_inset_px", 10)))
 
         if self._prev_gray is None or self._prev_gray.shape != gray.shape:
             self._prev_gray = gray
             self._last_update_ts = ts
             self._prev_state = "ERROR"
-            return self._status_payload(
+            payload = self._status_payload(
                 ts=ts,
                 region=region,
                 video_state="ERROR",
@@ -200,13 +264,27 @@ class MonitorLoop:
                 overall_reasons=["warming_up"],
                 errors=["warming_up"],
             )
+            payload["video"]["debug"] = {"analysis_inset_rect": inset_rect}
+            return payload
 
         diff = np.abs(gray.astype(np.int16) - self._prev_gray.astype(np.int16)).astype(np.uint8)
         self._prev_gray = gray
         self._last_update_ts = ts
 
-        tiles_raw = _tile_means(diff, rows=rows, cols=cols)
-        mean_raw = float(diff.mean() / 255.0)
+        dead_rows, b1, b2, b3 = _detect_dead_top_rows(diff, rows=rows, max_rows=5)
+        print("bands:", b1, b2, b3, "dead_rows:", dead_rows)
+
+        if dead_rows > 0:
+            tile_h = max(1, diff.shape[0] // max(rows, 1))
+            crop_top = min(diff.shape[0] - 1, dead_rows * tile_h)
+            diff_roi = diff[crop_top:, :]
+            roi_rect = {"x": 0, "y": int(crop_top), "width": int(diff.shape[1]), "height": int(diff_roi.shape[0])}
+        else:
+            diff_roi = diff
+            roi_rect = {"x": 0, "y": 0, "width": int(diff.shape[1]), "height": int(diff.shape[0])}
+
+        tiles_raw = _tile_means(diff_roi, rows=rows, cols=cols)
+        mean_raw = float(diff_roi.mean() / 255.0)
 
         mean_raw = float(min(1.0, mean_raw * float(self._params.diff_gain)))
 
@@ -220,10 +298,7 @@ class MonitorLoop:
         mean_norm = _clamp01(mean_raw / mean_full)
         tiles_norm = [_clamp01(t / tile_full) for t in tiles_raw]
 
-        # Use a combined activity score so localized motion isn't averaged away.
-        # - mean_norm captures global movement
-        # - topk_mean captures localized movement
-        topk_mean = _topk_mean(tiles_norm, 1)  # effectively max(tile)
+        topk_mean = _topk_mean(tiles_norm, 1)
         activity = max(mean_norm, topk_mean)
 
         a = float(self._params.ema_alpha)
@@ -257,8 +332,14 @@ class MonitorLoop:
         payload["video"]["last_update_ts"] = float(self._last_update_ts)
         payload["video"]["stale"] = False
         payload["video"]["stale_age_sec"] = 0.0
+        payload["video"]["debug"] = {
+            "analysis_inset_px": int(getattr(self._params, "analysis_inset_px", 10)),
+            "analysis_inset_rect": inset_rect,
+            "bands_u8": [float(b1), float(b2), float(b3)],
+            "dead_top_tile_rows": int(dead_rows),
+            "diff_roi_rect": roi_rect,
+        }
 
-        # Recording: start on NO_MOTION; stop when leaving NO_MOTION + grace seconds.
         frame_bgr = _bgra_to_bgr(frame)
         self._recorder.update(now_ts=ts, state=video_state, frame_bgr=frame_bgr)
 

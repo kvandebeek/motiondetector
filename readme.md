@@ -1,13 +1,13 @@
 # motiondetector
 
 A lightweight Windows-first motion detection utility that monitors a user-defined region of the screen.  
-It overlays a **transparent, always-on-top** window that you can position and resize over any application. The monitored region is sampled continuously and analyzed for motion, producing a simple **JSON status stream** including a **3×3 tile grid** (tiles 1–9) with per-tile motion metrics. The number of tiles can be adjusted via the config.json (and these are only limited by the processing power of the machine this is working on).
+It overlays a **transparent, always-on-top** window that you can position and resize over any application. The monitored region is sampled continuously and analyzed for motion, producing a simple **JSON status stream** including a **3×3 tile grid** (tiles 1–9) with per-tile motion metrics. The grid size (number of tiles) is customizable (in rows and columns).
 
 ## Features
 
 - Transparent overlay window (place it over any area you want to monitor)
 - Always-on-top overlay so it stays visible while you work
-- Region is split into a **3×3 grid** (9 tiles) for localized motion reporting, but customizable
+- Region is split into a **3×3 grid** (9 tiles) for localized motion reporting, or customizable to any rows/columns combination
 - Outputs JSON telemetry:
   - capture status (`OK` / error + reason)
   - motion state (`NO_MOTION` / `MOTION`)
@@ -127,7 +127,7 @@ If you use a config file, prefer a simple `config.json` or `.env`. Example (illu
 
 ## Tile numbering
 
-Tiles are numbered left-to-right, top-to-bottom, example given:
+Tiles are numbered left-to-right, top-to-bottom:
 
 ```
 1 2 3

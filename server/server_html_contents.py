@@ -422,7 +422,7 @@ quitBtn.addEventListener('click', async () => {{
 }});
 
 tick();
-setInterval(tick, 500);
+setInterval(tick, 200);
 </script>
 </body>
 </html>

@@ -5,7 +5,7 @@
   },
   "capture": {
     "backend": "MSS",
-    "fps": 10
+    "fps": 5
   },
   "motion": {
     "diff_gain": 1.2,
@@ -15,8 +15,8 @@
     "history_seconds": 120,
     "mean_full_scale": 0.08,
     "tile_full_scale": 0.16,
-    "grid_cols": 40,
-    "grid_rows": 40
+    "grid_cols": 8,
+    "grid_rows": 8
   },
   "recording": {
     "enabled": true,

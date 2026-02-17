@@ -21,22 +21,25 @@ A small Python application that detects motion in a user-defined on-screen regio
 
 ```
 .
-├─ main.py
-├─ requirements.lock.txt
+├─ main.py                       # App entry point: loads config, starts server + monitor loop
+├─ readme.md                     # Project documentation (setup, usage, configuration, troubleshooting)
+├─ docs/                         # Additional documentation (design notes, screenshots, deep-dives, etc.)
+├─ requirements.lock.txt         # Pinned Python dependencies for reproducible installs
 ├─ analyzer/
-│  ├─ capture.py
-│  ├─ monitor_loop.py
-│  ├─ monitor_windows.py
-│  └─ recorder.py
+│  ├─ capture.py                 # Screen capture backends + Region model (grabs frames from the selected area)
+│  ├─ monitor_loop.py            # Main detection loop: compute motion metrics per tile + overall state; drives recorder + status updates
+│  ├─ monitor_windows.py         # Windows-specific wiring/helpers for running the monitor on Windows
+│  └─ recorder.py                # Clip recording logic (triggered by state changes / cooldowns)
 ├─ config/
-│  ├─ config.json
-│  └─ config.py
+│  ├─ config.json                # User-editable settings (fps, thresholds, grid size, region defaults, UI styling)
+│  └─ config.py                  # Config schema + validation/parsing utilities
 ├─ server/
-│  ├─ server.py
-│  ├─ status_store.py
-│  └─ server_html_contents.py
+│  ├─ server.py                  # FastAPI server exposing status endpoints + serving the UI/HTML
+│  ├─ status_store.py            # In-memory status store shared between monitor loop and API
+│  └─ server_html_contents.py    # Embedded/served HTML content for the status page(s)
 └─ ui/
-   └─ selector_ui.py
+   └─ selector_ui.py             # Transparent always-on-top region selector window with grid overlay (PySide6)
+
 ```
 
 (Reflects the modules imported/used by the entrypoint.) ([github.com](https://github.com/kvandebeek/motiondetector/raw/main/main.py))

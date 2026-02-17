@@ -1,56 +1,83 @@
-# motiondetector
-
-This module handles motion detection using various methodologies.
-
-## Classes
-
-### MotionDetector
-
-```python
 class MotionDetector:
-    """A class to detect motion in video frames."""
+    """
+    Detects motion between two consecutive video frames using a configurable threshold.
 
-    def __init__(self, threshold=0.5):
-        """Initializes the motion detector with a given threshold.
+    Intended usage:
+      - Read two consecutive frames (frame1, frame2) from a video source (e.g., cv2.VideoCapture)
+      - Call detect_motion(frame1, frame2)
+      - If True, treat it as "motion detected" for that frame pair
+    """
 
+    def __init__(self, threshold: float = 0.5) -> None:
+        """
         Args:
-            threshold (float): The sensitivity threshold for motion detection.
+            threshold:
+                Sensitivity threshold for declaring motion. The exact interpretation depends on the
+                implementation of detect_motion(). Common options include:
+                  - fraction of pixels that changed
+                  - normalized average difference between frames
+                  - percentage of tiles/regions exceeding a change metric
         """
         self.threshold = threshold
 
-    def detect_motion(self, frame1, frame2):
-        """Detects motion between two frames. 
+    def detect_motion(self, frame1, frame2) -> bool:
+        """
+        Compare two frames and return True if motion is detected.
 
         Args:
-            frame1 (ndarray): The first video frame.
-            frame2 (ndarray): The second video frame.
+            frame1, frame2:
+                Consecutive frames from the same video stream. Typically BGR images (numpy arrays)
+                as returned by OpenCV.
 
         Returns:
-            bool: True if motion is detected, False otherwise.
+            True if motion is detected, otherwise False.
+
+        Notes:
+            This is currently a stub ("pass"). A typical implementation would:
+              1) Validate that frames are not None and have matching shape
+              2) Convert to grayscale (optional but common)
+              3) Compute absolute difference (absdiff)
+              4) Threshold / aggregate the difference
+              5) Compare aggregate result against self.threshold
         """
-        # Logic for motion detection
+        # TODO: implement motion detection logic.
+        # Example strategies:
+        # - Pixel-level: normalized mean(absdiff) > threshold
+        # - Mask-based: (changed_pixels / total_pixels) > threshold
+        # - Tile/grid-based: any tile exceeds per-tile threshold
         pass
 
-## Functions
 
-### main
+def main() -> None:
+    """
+    Minimal loop that reads frames from a video source and prints when motion is detected.
 
-```python
-def main():
-    """Main function to run the motion detection program."""
+    Important:
+      - video_source must be an initialized capture object, e.g. cv2.VideoCapture(0) or a file path.
+      - The loop currently has no exit condition and no error handling for read failures.
+      - cv2.destroyAllWindows() only matters if you create OpenCV windows (imshow), which this code
+        currently does not.
+    """
+    # In OpenCV, this should be something like:
+    #   video_source = cv2.VideoCapture(0)            # webcam
+    # or:
+    #   video_source = cv2.VideoCapture("video.mp4")  # file
+    video_source = ""
 
-    # Setup
-    video_source = "" # Specify the video source
-    detector = MotionDetector(threshold=0.5)  # Create a motion detector instance
+    # Instantiate the detector with a chosen sensitivity threshold.
+    detector = MotionDetector(threshold=0.5)
 
-    # Process video frames
     while True:
+        # Read two consecutive frames so detect_motion can compare them.
+        # ret indicates whether the read succeeded; frame is the image.
         ret, frame1 = video_source.read()
         ret, frame2 = video_source.read()
+
+        # In a robust implementation, you should break if ret is False or frames are None,
+        # otherwise you risk exceptions or an infinite loop on end-of-stream.
         if detector.detect_motion(frame1, frame2):
-            print("Motion detected!")  # Notify about detected motion
-        
-    # Cleanup
+            print("Motion detected!")
+
+    # Cleanup resources (unreachable in the current code because the loop never exits).
     video_source.release()
     cv2.destroyAllWindows()
-```

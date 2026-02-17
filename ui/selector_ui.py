@@ -11,11 +11,13 @@ from PySide6.QtWidgets import QApplication, QWidget
 
 from analyzer.capture import Region
 
+# Mouse interaction modes: either moving the window or resizing via an edge/corner.
 ResizeMode = Literal["none", "move", "l", "r", "t", "b", "tl", "tr", "bl", "br"]
 
 
 @dataclass
 class UiRegion:
+    # Initial window geometry in Qt *logical* pixels.
     x: int
     y: int
     width: int
@@ -23,6 +25,7 @@ class UiRegion:
 
 
 def _round_int(x: float) -> int:
+    # Consistent rounding when converting float pixel values to int pixel coordinates.
     return int(round(x))
 
 
@@ -41,23 +44,30 @@ class SelectorWindow(QWidget):
     ) -> None:
         super().__init__()
 
+        # Callbacks for lifecycle + for emitting the capture region to the monitor.
         self._on_close = on_close
         self._on_region_change = on_region_change
 
+        # Visual border thickness and grid line thickness (both in logical px).
         self._border_px = int(border_px)
         self._grid_line_px = int(grid_line_px)
 
+        # Logical grid dimensions (rows/cols) used for drawing the dashed overlay.
         self._grid_rows = int(grid_rows)
         self._grid_cols = int(grid_cols)
         if self._grid_rows <= 0 or self._grid_cols <= 0:
             raise ValueError("grid_rows and grid_cols must be > 0")
 
+        # Extra inset for emitted capture region so the border and some padding are excluded.
+        # This helps avoid the overlay itself being captured/affecting motion detection.
         self._emit_inset_px = int(emit_inset_px)
 
+        # Drag state: what operation is active, and the start state for delta calculations.
         self._drag_mode: ResizeMode = "none"
-        self._drag_start_pos = QPoint(0, 0)
-        self._start_geom = QRect()
+        self._drag_start_pos = QPoint(0, 0)  # global mouse position at press time
+        self._start_geom = QRect()  # widget geometry at press time
 
+        # Frameless transparent always-on-top tool window.
         self.setWindowTitle("motiondetector grid")
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -65,68 +75,82 @@ class SelectorWindow(QWidget):
             | Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        self.setMouseTracking(True)
+        self.setMouseTracking(True)  # needed to update cursor shape without dragging
 
+        # Apply the initial geometry and immediately emit the corresponding capture region.
         self.setGeometry(initial.x, initial.y, initial.width, initial.height)
         self._emit_region()
 
     def _inner_rect(self) -> QRect:
+        # Compute the drawable/captured area inside the border and extra inset.
+        # Returned rect is in widget-local logical pixels.
         inset = max(0, self._border_px + self._emit_inset_px)
         r = self.rect().adjusted(inset, inset, -inset, -inset)
         if r.width() < 1 or r.height() < 1:
+            # Fallback when the window is too small: never return an empty rect.
             return QRect(0, 0, max(1, self.width()), max(1, self.height()))
         return r
 
     def _dpr(self) -> float:
-        # On Windows with scaling, this is typically 1.25 / 1.5 / 2.0 etc.
-        # MSS uses physical pixels; Qt geometry is in logical pixels.
+        # Device pixel ratio (DPR) is used to convert logical (Qt) pixels to physical pixels.
+        # On Windows with display scaling this is typically 1.25 / 1.5 / 2.0 etc.
+        # MSS captures in physical pixels, so capture coordinates must be scaled.
         try:
             return float(self.devicePixelRatioF())
         except Exception:
+            # Conservative default: assume no scaling if DPR can't be queried.
             return 1.0
 
     def _emit_region(self) -> None:
+        # Emit the current capture region in *physical* pixels to downstream capture code.
         inner = self._inner_rect()
 
-        # Global top-left in *logical* pixels
+        # Top-left in global coordinates, still in Qt logical pixel units.
         tl_logical = self.mapToGlobal(inner.topLeft())
         dpr = self._dpr()
 
-        # Convert to *physical* pixels for MSS
+        # Convert logical coords/sizes to physical pixels for screen capture.
         x = _round_int(float(tl_logical.x()) * dpr)
         y = _round_int(float(tl_logical.y()) * dpr)
         w = _round_int(float(inner.width()) * dpr)
         h = _round_int(float(inner.height()) * dpr)
 
+        # Ensure a valid capture area (MSS expects positive size).
         w = max(1, w)
         h = max(1, h)
 
         self._on_region_change(Region(x=x, y=y, width=w, height=h))
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
+        # Ensure the owning controller can react to the selector UI being closed.
         self._on_close()
         event.accept()
 
     @staticmethod
     def _edges(size: int, parts: int) -> list[int]:
+        # Split [0..size] into 'parts' segments using rounding so boundaries line up.
+        # Returns a list of pixel offsets with length parts+1 (including 0 and size).
         out = [int(round(i * size / parts)) for i in range(parts + 1)]
         out[0] = 0
         out[parts] = int(size)
         return out
 
     def paintEvent(self, event) -> None:  # type: ignore[override]
+        # Draw the inner border + dashed grid overlay.
         _ = event
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
 
         inner = self._inner_rect()
 
+        # Solid border.
         pen = QPen(Qt.GlobalColor.cyan)
         pen.setWidth(self._border_px)
         p.setPen(pen)
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawRect(inner)
 
+        # Dashed grid lines.
         pen2 = QPen(Qt.GlobalColor.cyan)
         pen2.setWidth(self._grid_line_px)
         pen2.setStyle(Qt.PenStyle.DashLine)
@@ -135,6 +159,7 @@ class SelectorWindow(QWidget):
         w = inner.width()
         h = inner.height()
 
+        # Compute rounded edges so each tile spans the full width/height without gaps.
         x_edges = self._edges(w, self._grid_cols)
         y_edges = self._edges(h, self._grid_rows)
 
@@ -143,15 +168,19 @@ class SelectorWindow(QWidget):
         right = inner.right()
         bottom = inner.bottom()
 
+        # Vertical grid lines.
         for i in range(1, self._grid_cols):
             x = left + x_edges[i]
             p.drawLine(x, top, x, bottom)
 
+        # Horizontal grid lines.
         for i in range(1, self._grid_rows):
             y = top + y_edges[i]
             p.drawLine(left, y, right, y)
 
     def _hit_test(self, pos: QPoint) -> ResizeMode:
+        # Determine which resize handle (or move) the cursor is over.
+        # Uses a margin around the window edges/corners, not the inner rect.
         margin = 12
         x = pos.x()
         y = pos.y()
@@ -182,6 +211,7 @@ class SelectorWindow(QWidget):
         return "move"
 
     def mousePressEvent(self, event) -> None:  # type: ignore[override]
+        # Start a move/resize operation on left click.
         if event.button() != Qt.MouseButton.LeftButton:
             return
         self._drag_mode = self._hit_test(event.position().toPoint())
@@ -189,6 +219,8 @@ class SelectorWindow(QWidget):
         self._start_geom = self.geometry()
 
     def mouseMoveEvent(self, event) -> None:  # type: ignore[override]
+        # While not dragging: update cursor shape.
+        # While dragging: update window geometry and emit the new capture region.
         pos = event.position().toPoint()
         mode = self._hit_test(pos)
 
@@ -199,6 +231,7 @@ class SelectorWindow(QWidget):
         delta = event.globalPosition().toPoint() - self._drag_start_pos
         g = QRect(self._start_geom)
 
+        # Prevent collapsing to near-zero size during resize.
         min_w = 120
         min_h = 90
 
@@ -208,6 +241,7 @@ class SelectorWindow(QWidget):
             dx = delta.x()
             dy = delta.y()
 
+            # Adjust edges based on drag handle.
             if "l" in self._drag_mode:
                 g.setLeft(g.left() + dx)
             if "r" in self._drag_mode:
@@ -217,6 +251,7 @@ class SelectorWindow(QWidget):
             if "b" in self._drag_mode:
                 g.setBottom(g.bottom() + dy)
 
+            # Clamp width/height by adjusting the active edge back into bounds.
             if g.width() < min_w:
                 if "l" in self._drag_mode:
                     g.setLeft(g.right() - min_w)
@@ -230,14 +265,16 @@ class SelectorWindow(QWidget):
                     g.setBottom(g.top() + min_h)
 
         self.setGeometry(g)
-        self._emit_region()
-        self.update()
+        self._emit_region()  # keep capture region in sync with the current window geometry
+        self.update()  # repaint border/grid after geometry changes
 
     def mouseReleaseEvent(self, event) -> None:  # type: ignore[override]
+        # End current move/resize operation.
         _ = event
         self._drag_mode = "none"
 
     def _set_cursor(self, mode: ResizeMode) -> None:
+        # Map hit-test result to an appropriate cursor shape.
         if mode in ("l", "r"):
             self.setCursor(Qt.CursorShape.SizeHorCursor)
         elif mode in ("t", "b"):
@@ -262,6 +299,7 @@ def run_selector_ui(
     grid_cols: int = 3,
     emit_inset_px: int = 10,
 ) -> None:
+    # Entrypoint to run the selector UI in a thread: creates its own QApplication loop.
     app = QApplication([])
     w = SelectorWindow(
         initial=initial,
@@ -275,10 +313,12 @@ def run_selector_ui(
     )
     w.show()
 
+    # Poll for the quit flag because this UI is typically controlled from another thread.
     timer = QTimer()
     timer.setInterval(200)
 
     def on_tick() -> None:
+        # Stop the UI loop when the owner sets the quit flag.
         if quit_flag.is_set():
             timer.stop()
             w.close()

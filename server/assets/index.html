@@ -1,0 +1,55 @@
+<!-- server/assets/index.html -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>motiondetector</title>
+  <link rel="stylesheet" href="/server/assets/styles.css" />
+</head>
+<body>
+  <header>
+    <h1>motiondetector</h1>
+    <div class="actions">
+      <label class="toggle" title="Show numbers on the selector overlay grid">
+        <input id="toggleTileNumbers" type="checkbox" />
+        <span>Tile numbers</span>
+      </label>
+      <button id="copyJson">Copy JSON</button>
+      <button id="quitBtn">Quit</button>
+    </div>
+  </header>
+
+  <div class="grid">
+    <section class="panel">
+      <h2><span>Status JSON</span><span class="subtle" id="tsLabel">—</span></h2>
+
+      <div class="pillrow">
+        <span class="pill" id="pillVideo">video: —</span>
+        <span class="pill" id="pillMean">motion_mean: —</span>
+        <span class="pill" id="pillOverall">overall: —</span>
+      </div>
+
+      <pre id="jsonBox">{}</pre>
+    </section>
+
+    <section class="panel">
+      <h2><span>Motion mean (last {{HISTORY_SECONDS}}s)</span></h2>
+      <div class="chartwrap">
+        <canvas id="chart" width="900" height="540"></canvas>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2><span>Tiles heatmap (0 → 1)</span></h2>
+      <div class="heatwrap">
+        <canvas id="tilesHeatmap" width="540" height="540" aria-label="Tiles heatmap (click tile to disable/enable)"></canvas>
+      </div>
+      <div class="subtle" id="gridLabel" style="margin-top:10px;">grid: —</div>
+      <div class="subtle" style="margin-top:6px;">Click a tile to disable/enable it (disabled tiles are excluded from measurements).</div>
+    </section>
+  </div>
+
+  <script type="module" src="/server/assets/app.js"></script>
+</body>
+</html>

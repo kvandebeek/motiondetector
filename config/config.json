@@ -1,11 +1,12 @@
 {
   "server": {
     "host": "127.0.0.1",
-    "port": 8735
+    "port": 8735,
+    "server_port": 8735
   },
   "capture": {
     "backend": "MSS",
-    "fps": 5
+    "fps": 15
   },
   "motion": {
     "diff_gain": 1.2,
@@ -15,14 +16,14 @@
     "history_seconds": 120,
     "mean_full_scale": 0.08,
     "tile_full_scale": 0.16,
-    "grid_cols": 16,
-    "grid_rows": 16
+    "grid_cols": 10,
+    "grid_rows": 10
   },
   "recording": {
-    "enabled": true,
+    "enabled": false,
     "trigger_state": "NO_MOTION",
-    "clip_seconds": 10,
-    "cooldown_seconds": 30,
+    "clip_seconds": 15,
+    "cooldown_seconds": 15,
     "assets_dir": "./assets"
   },
   "ui": {

@@ -8,44 +8,49 @@ def set_process_dpi_awareness() -> None:
     Enable DPI awareness for the current process on Windows.
 
     Why this matters:
-        On Windows, display scaling (e.g. 125%, 150%) can cause a DPI-unaware process to receive
-        *virtualized* (scaled) coordinates. That makes screen coordinates and captured pixels not
-        line up with what you see on the physical screen.
+    - If a process is DPI-unaware, Windows may apply DPI virtualization (coordinate scaling).
+      That leads to mismatches between:
+        * UI overlay geometry (Qt/PySide window coordinates)
+        * screen-capture coordinates (MSS / Win32)
+        * the physical pixels on the monitor
+    - Mixed-DPI multi-monitor setups (e.g., laptop + external display) are especially sensitive:
+      each monitor can have a different effective DPI.
 
     What this does:
-        - First tries the modern API (SetProcessDpiAwareness) to request *per-monitor* DPI awareness.
-          This is preferred on multi-monitor setups where each display can have a different DPI.
-        - If that API is not available or fails, falls back to the older system-wide API
-          (SetProcessDPIAware).
+    - Prefer the modern "per-monitor DPI aware" API (shcore.SetProcessDpiAwareness).
+      This is the most accurate mode for per-monitor scaling.
+    - If unavailable or failing, fall back to the legacy user32.SetProcessDPIAware(), which
+      at least disables most DPI virtualization on single-DPI setups.
 
-    Notes:
-        - Call this as early as possible (before creating windows / UI frameworks), because many
-          toolkits read DPI state once at startup.
-        - This function is Windows-specific; on non-Windows platforms the calls will fail and the
-          function will return without doing anything.
+    Operational notes:
+    - Call as early as possible (before creating any UI windows). Many UI toolkits cache DPI
+      state at initialization time; calling late can be ineffective.
+    - Windows-only: on non-Windows platforms, these calls will raise and we intentionally
+      no-op via the exception handling.
     """
     try:
         # Modern DPI API hosted in shcore.dll (available on newer Windows versions).
-        # Access via ctypes.windll to call into native Win32 DLL exports.
+        # ctypes.windll resolves DLL exports as attributes.
         shcore = ctypes.windll.shcore  # type: ignore[attr-defined]
 
-        # SetProcessDpiAwareness values:
+        # SetProcessDpiAwareness values (PROCESS_DPI_AWARENESS enum):
         #   0 = PROCESS_DPI_UNAWARE
         #   1 = PROCESS_SYSTEM_DPI_AWARE
         #   2 = PROCESS_PER_MONITOR_DPI_AWARE  (preferred)
         #
-        # Using '2' makes coordinates align with physical pixels per monitor, reducing
-        # coordinate/pixel mismatches for screen capture and overlay windows.
+        # Using 2 aligns logical coordinates with physical pixels per monitor.
         shcore.SetProcessDpiAwareness(2)
     except Exception:
-        # Fallback for older Windows versions that don't expose shcore.SetProcessDpiAwareness
-        # (or if the call fails due to OS policy / already-initialized DPI state).
+        # Fallback for:
+        # - Older Windows versions (no shcore.dll export)
+        # - Environments where DPI awareness is already set and the call errors
+        # - Policies that block the newer API
         try:
             user32 = ctypes.windll.user32  # type: ignore[attr-defined]
 
-            # Legacy API: enables system DPI awareness (not per-monitor), but still avoids the
-            # most common scaling virtualization issues on single-DPI setups.
+            # Legacy API: system DPI aware (not per-monitor), but still prevents the most common
+            # DPI virtualization problems for many single-monitor and uniform-DPI setups.
             user32.SetProcessDPIAware()
         except Exception:
-            # If both calls fail (e.g. non-Windows, restricted environment), do nothing.
+            # Non-Windows or restricted environment: safe no-op.
             return

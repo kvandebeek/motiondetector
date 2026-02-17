@@ -1,104 +1,332 @@
+# server/status_store.py
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections import deque
 import threading
 import time
 from typing import Any, Deque, Dict, List
-from collections import deque
 
 
-JsonDict = Dict[str, Any]  # JSON-like dict payload used across server/analyzer boundaries
+# JSON-ish payload type used throughout the server/analyzer boundary.
+JsonDict = Dict[str, Any]
 
 
 @dataclass(frozen=True)
 class StatusSample:
-    # Single time-series datapoint kept in the rolling history.
-    ts: float  # unix timestamp (seconds)
-    payload: JsonDict  # raw status payload as produced by the analyzer loop
+    """
+    One history entry.
+
+    We store the timestamp separately from the payload to make trimming reliable even if:
+    - payload timestamps are missing
+    - payload timestamps are non-numeric
+    - payload timestamps are rewritten by callers
+    """
+    ts: float
+    payload: JsonDict
 
 
 class StatusStore:
     """
-    Thread-safe store for:
-      - the latest status payload (for fast polling by the API/server)
-      - a rolling window of status history (for charts/debugging/clients)
-      - simple UI settings toggles (server-controlled)
+    Thread-safe store for application state shared across threads.
 
-    The analyzer thread typically calls set_latest(), while the web server thread
-    calls get_latest()/get_history() concurrently.
+    Responsibilities:
+      - Latest status payload (produced by analyzer/monitor loop)
+      - Rolling history of payloads (for charting and debugging)
+      - UI settings (server-side source of truth for UI toggles)
+      - Disabled tile mask (server-side source of truth; consumed by analyzer + web UI)
+      - Quit signalling (web endpoint requests shutdown; main loop polls this)
+
+    Threading model:
+      - The monitor loop thread calls `set_latest(...)` frequently.
+      - The web server thread(s) call getters/setters for UI settings and tile mask.
+      - All state is protected by a single lock; operations are small and bounded.
+
+    Schema policy:
+      - `get_payload()` returns the public schema:
+          * injects UI settings into the payload
+          * forces disabled tiles to None in video.tiles
+          * ensures tiles list matches grid size and is JSON-safe
+      - The store accepts arbitrary payload dicts but normalizes at read time.
     """
 
-    def __init__(self, history_seconds: float) -> None:
-        self._history_seconds = float(history_seconds)  # history retention window (seconds)
-        self._lock = threading.Lock()  # protects all fields below
-        self._latest: JsonDict = self._default_payload(reason="not_initialized")  # safe initial state
-        self._history: Deque[StatusSample] = deque()  # append-only; trimmed by time window
-        self._quit_requested = False  # shared shutdown flag for cooperating threads
+    def __init__(self, history_seconds: float, *, grid_rows: int, grid_cols: int) -> None:
+        self._history_seconds = float(history_seconds)
+        self._lock = threading.Lock()
 
-        # UI settings (server-controlled)
+        # Store-level grid defaults are used when incoming payloads omit grid metadata.
+        self._grid_rows = max(1, int(grid_rows))
+        self._grid_cols = max(1, int(grid_cols))
+
+        # Start with a well-formed payload so /status can be called before the analyzer runs.
+        self._latest: JsonDict = self._default_payload(
+            reason="not_initialized",
+            grid_rows=self._grid_rows,
+            grid_cols=self._grid_cols,
+            show_tile_numbers=True,
+        )
+
+        # Rolling window of samples for the chart/history endpoint.
+        self._history: Deque[StatusSample] = deque()
+
+        # Shutdown request flag set by /quit endpoint, read by main app loop.
+        self._quit_requested = False
+
+        # Single source of truth for tile-number visibility across overlay + heatmap.
         self._show_tile_numbers = True
+
+        # 0-based tile indices disabled via web UI clicks.
+        self._disabled_tiles: list[int] = []
 
     # ----------------------------
     # Status payload + history
     # ----------------------------
 
     def set_latest(self, payload: JsonDict) -> None:
-        # Update latest payload + append to history, trimming old samples.
+        """
+        Store a new status payload and append it to history.
+
+        Notes:
+        - Timestamp is taken from payload["timestamp"] when present; otherwise `time.time()`.
+        - History is trimmed on each insert to keep memory bounded.
+        """
         if not isinstance(payload, dict):
             raise TypeError("payload must be a dict")
-        ts = float(payload.get("timestamp", time.time()))  # tolerate missing timestamps
+        ts = float(payload.get("timestamp", time.time()))
         with self._lock:
-            self._latest = payload  # keep raw payload (callers may already have nested dicts)
-            self._history.append(StatusSample(ts=ts, payload=payload))  # store time-series sample
-            self._trim_locked(now=ts)  # enforce rolling window
+            self._latest = payload
+            self._history.append(StatusSample(ts=ts, payload=payload))
+            self._trim_locked(now=ts)
 
     def get_latest(self) -> JsonDict:
-        # Snapshot latest payload (copy) so callers can't mutate internal state.
+        """
+        Return a shallow copy of the most recently stored raw payload.
+
+        Callers should prefer `get_payload()` for the normalized public schema.
+        """
         with self._lock:
             return dict(self._latest)
 
     def get_payload(self) -> JsonDict:
-        # Compatibility alias: server/server.py expects this method name.
-        return self.get_latest()
+        """
+        Return the latest payload in the public schema, with server-side state injected.
+
+        Normalization performed:
+        - Ensures `video.grid` exists and is valid (fallback to store defaults).
+        - Ensures `video.tiles` is a list[float|None] of length rows*cols.
+        - Applies the disabled tile mask by forcing disabled indices to None.
+        - Ensures `errors` is always a list.
+        - Injects `ui` settings so clients have a single polling source.
+
+        Compatibility:
+        - This method intentionally does not add legacy back-compat keys.
+        """
+        payload = self.get_latest()
+
+        # Extract/normalize video section.
+        video_raw = payload.get("video")
+        video: Dict[str, Any] = dict(video_raw) if isinstance(video_raw, dict) else {}
+
+        disabled = self.get_disabled_tiles()
+
+        # Ensure grid exists (fallback to store config).
+        grid_raw = video.get("grid")
+        if isinstance(grid_raw, dict):
+            rows = int(grid_raw.get("rows", self._grid_rows))
+            cols = int(grid_raw.get("cols", self._grid_cols))
+        else:
+            rows = self._grid_rows
+            cols = self._grid_cols
+
+        rows = max(1, rows)
+        cols = max(1, cols)
+        n = rows * cols
+
+        # Ensure tiles is list[float|None] length n.
+        # Non-numeric values are treated as disabled/invalid (None).
+        tiles_raw = video.get("tiles")
+        tiles_out: list[float | None] = []
+
+        if isinstance(tiles_raw, list):
+            for v in tiles_raw[:n]:
+                if v is None:
+                    tiles_out.append(None)
+                elif isinstance(v, bool):
+                    # Avoid bool-as-int leakage (True -> 1).
+                    tiles_out.append(None)
+                elif isinstance(v, (int, float)):
+                    tiles_out.append(float(v))
+                else:
+                    tiles_out.append(None)
+
+        # Pad if short (default to 0), truncate if long.
+        if len(tiles_out) < n:
+            tiles_out.extend([0.0] * (n - len(tiles_out)))
+        if len(tiles_out) > n:
+            tiles_out = tiles_out[:n]
+
+        # Apply disabled mask: force disabled indices to None.
+        # Store ensures indices are non-negative; here we also clamp to grid bounds.
+        disabled_set = set(i for i in disabled if 0 <= int(i) < n)
+        for i in disabled_set:
+            tiles_out[int(i)] = None
+
+        # Build clean video section that downstream clients can rely on.
+        clean_video: Dict[str, Any] = {
+            "state": video.get("state", "ERROR"),
+            "confidence": float(video.get("confidence", 0.0)),
+            "motion_mean": float(video.get("motion_mean", 0.0)),
+            "grid": {"rows": rows, "cols": cols},
+            "tiles": tiles_out,
+            "disabled_tiles": sorted(disabled_set),
+            "stale": bool(video.get("stale", False)),
+            "stale_age_sec": float(video.get("stale_age_sec", 0.0)),
+        }
+
+        # Copy original payload and replace sections with normalized versions.
+        out: JsonDict = dict(payload)
+        out["video"] = clean_video
+
+        # Preserve top-level objects if present (shallow copies for safety).
+        capture_raw = out.get("capture")
+        if isinstance(capture_raw, dict):
+            out["capture"] = dict(capture_raw)
+
+        overall_raw = out.get("overall")
+        if isinstance(overall_raw, dict):
+            out["overall"] = dict(overall_raw)
+
+        region_raw = out.get("region")
+        if isinstance(region_raw, dict):
+            out["region"] = dict(region_raw)
+
+        # Ensure errors is always a list.
+        errors_raw = out.get("errors")
+        if isinstance(errors_raw, list):
+            out["errors"] = list(errors_raw)
+        else:
+            out["errors"] = []
+
+        # Inject UI settings so the web UI can render consistently across clients.
+        out["ui"] = self.get_ui_settings()
+
+        return out
 
     def get_history(self) -> List[JsonDict]:
-        # Return a list of payloads within the retention window (trim first).
+        """
+        Return the raw history payloads within the configured rolling window.
+
+        Notes:
+        - Trims the deque under lock before returning.
+        - Returns the stored payloads as-is (no normalization). Use get_payload_history()
+          if you need injected UI settings for each entry.
+        """
         now = time.time()
         with self._lock:
             self._trim_locked(now=now)
-            return [s.payload for s in list(self._history)]  # preserve chronological order
+            return [s.payload for s in list(self._history)]
 
     def get_payload_history(self) -> List[JsonDict]:
-        # Compatibility alias: some callers use this method name.
-        return self.get_history()
+        """
+        Return history payloads suitable for the public API.
+
+        Current behavior:
+        - Injects the current UI settings into each returned payload.
+
+        Note:
+        - UI settings are not historically versioned; history shows the current UI state,
+          not the state at the time of each sample.
+        """
+        raw = self.get_history()
+        ui = self.get_ui_settings()
+        out: List[JsonDict] = []
+        for p in raw:
+            pp: JsonDict = dict(p)
+            pp["ui"] = ui
+            out.append(pp)
+        return out
 
     # ----------------------------
     # UI settings
     # ----------------------------
 
     def set_show_tile_numbers(self, enabled: bool) -> None:
+        """
+        Persist the tile-number overlay toggle.
+
+        This is used by:
+        - the web UI (heatmap numbers)
+        - any other UI surfaces that want a shared toggle (e.g., overlay window)
+        """
         with self._lock:
             self._show_tile_numbers = bool(enabled)
 
     def get_show_tile_numbers(self) -> bool:
+        """
+        Read the current tile-number overlay toggle.
+        """
         with self._lock:
             return bool(self._show_tile_numbers)
 
     def get_ui_settings(self) -> JsonDict:
+        """
+        Return the UI settings object exposed via /ui and injected into /status.
+
+        Kept as a dict to allow future settings without changing the route surface.
+        """
         with self._lock:
             return {"show_tile_numbers": bool(self._show_tile_numbers)}
+
+    # ----------------------------
+    # Tile mask (disabled tiles)
+    # ----------------------------
+
+    def set_disabled_tiles(self, disabled_tiles: List[int]) -> None:
+        """
+        Replace the disabled tile list.
+
+        Validation:
+        - Requires a list input.
+        - Keeps only non-negative integers.
+        - Deduplicates and sorts for deterministic responses.
+
+        Note:
+        - Range validation (0..N-1) is applied in get_payload() because N depends
+          on the current grid size.
+        """
+        if not isinstance(disabled_tiles, list):
+            raise TypeError("disabled_tiles must be a list[int]")
+        cleaned = sorted({int(i) for i in disabled_tiles if isinstance(i, int) and i >= 0})
+        with self._lock:
+            self._disabled_tiles = cleaned
+
+    def get_disabled_tiles(self) -> List[int]:
+        """
+        Return the current disabled tile indices (0-based).
+        """
+        with self._lock:
+            return list(self._disabled_tiles)
 
     # ----------------------------
     # Quit signalling
     # ----------------------------
 
     def request_quit(self) -> None:
-        # Cooperative shutdown: set a flag that other threads can poll.
+        """
+        Request a clean application shutdown.
+
+        The web server sets this flag; the main application should poll it and coordinate:
+        - stopping monitor loop
+        - closing UI
+        - shutting down server thread (process exit)
+        """
         with self._lock:
             self._quit_requested = True
 
     def quit_requested(self) -> bool:
-        # Poll shutdown flag (thread-safe).
+        """
+        Check whether a shutdown has been requested.
+        """
         with self._lock:
             return self._quit_requested
 
@@ -107,41 +335,45 @@ class StatusStore:
     # ----------------------------
 
     def _trim_locked(self, now: float) -> None:
-        # Remove samples older than (now - history_seconds).
-        # Assumes caller holds self._lock.
+        """
+        Trim history deque to the configured rolling time window.
+
+        Must be called with self._lock held.
+        """
         cutoff = float(now) - self._history_seconds
         while self._history and self._history[0].ts < cutoff:
             self._history.popleft()
 
     @staticmethod
-    def _default_payload(*, reason: str) -> JsonDict:
-        # Build a fully-populated payload with safe defaults so the UI/API
-        # can render even before the analyzer loop starts producing real data.
+    def _default_payload(*, reason: str, grid_rows: int, grid_cols: int, show_tile_numbers: bool) -> JsonDict:
+        """
+        Create a well-formed “error/empty” payload used before the analyzer produces data.
+
+        This ensures:
+        - /status always returns a schema-correct payload
+        - the UI can render immediately (with placeholders) instead of handling missing keys
+        """
         now = time.time()
+
+        rows = max(1, int(grid_rows))
+        cols = max(1, int(grid_cols))
+        n = rows * cols
+
         return {
-            "timestamp": now,
-            "capture": {"state": "ERROR", "reason": reason, "backend": "UNKNOWN"},
+            "timestamp": float(now),
+            "capture": {"state": "ERROR", "reason": str(reason), "backend": "UNKNOWN"},
             "video": {
                 "state": "ERROR",
                 "confidence": 0.0,
                 "motion_mean": 0.0,
-                # Default tile keys for a 3x3 grid; keeps downstream consumers stable.
-                "tile1": 0.0,
-                "tile2": 0.0,
-                "tile3": 0.0,
-                "tile4": 0.0,
-                "tile5": 0.0,
-                "tile6": 0.0,
-                "tile7": 0.0,
-                "tile8": 0.0,
-                "tile9": 0.0,
-                # Bookkeeping fields used to detect stale data / last-change time.
-                "last_phash_change_ts": 0.0,
-                "last_update_ts": 0.0,
+                "grid": {"rows": rows, "cols": cols},
+                "tiles": [0.0] * n,
+                "disabled_tiles": [],
                 "stale": True,
                 "stale_age_sec": 0.0,
             },
-            "overall": {"state": "NOT_OK", "reasons": [reason]},
-            "errors": [reason],
+            "ui": {"show_tile_numbers": bool(show_tile_numbers)},
+            "overall": {"state": "NOT_OK", "reasons": [str(reason)]},
+            "errors": [str(reason)],
             "region": {"x": 0, "y": 0, "width": 0, "height": 0},
         }

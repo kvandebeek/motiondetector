@@ -1,77 +1,172 @@
+# server/server.py
 from __future__ import annotations
 
 import threading
-from typing import Any  # reserved for future expansion (kept if other modules import it)
+from pathlib import Path
+from typing import Any
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import Body, FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse
-from pydantic import BaseModel
+from fastapi.staticfiles import StaticFiles
 
 from server.server_html_contents import get_index_html
 from server.status_store import StatusStore
 
-
-class TileNumbersRequest(BaseModel):
-    enabled: bool
+# Static browser assets (index.html + JS modules + CSS).
+# Resolved relative to this module so it works regardless of CWD.
+_ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 
 
 def create_app(store: StatusStore) -> FastAPI:
-    """Create the FastAPI application with routes bound to the provided shared StatusStore.
+    """
+    Build the FastAPI application.
 
-    The StatusStore is used as an in-memory state carrier between the analyzer loop and the UI/API.
+    Responsibilities:
+    - Serve the browser UI (HTML + static assets).
+    - Expose JSON endpoints consumed by the UI and by external clients:
+        /status, /history, /tiles, /ui, /ui/tile-numbers, /quit
+    - Keep all state in StatusStore so routes remain thin and deterministic.
+
+    Notes:
+    - This function is side-effect free besides mounting static files and registering routes.
+    - Thread safety is handled by StatusStore; routes assume store methods are safe.
     """
     app = FastAPI()
 
+    # Static file mounts:
+    # - /assets is the canonical path for the UI.
+    # - /server/assets is kept for backward compatibility with older index.html builds.
+    app.mount("/assets", StaticFiles(directory=str(_ASSETS_DIR)), name="assets")
+    app.mount("/server/assets", StaticFiles(directory=str(_ASSETS_DIR)), name="server-assets")
+
     @app.get("/", response_class=HTMLResponse)
     async def index() -> HTMLResponse:
-        """Serve the lightweight HTML dashboard (polls /status and /history)."""
+        """
+        Serve the UI HTML.
+
+        The HTML is mostly static, but we inject small runtime configuration values
+        (e.g., history window) via a simple placeholder replacement.
+        """
         return HTMLResponse(get_index_html(history_seconds=120))
+
+    @app.get("/ui")
+    async def get_ui() -> JSONResponse:
+        """
+        Return UI settings used by the browser client.
+
+        This endpoint exists so the UI can initialize toggles/state even before it has
+        fetched /status successfully.
+        """
+        return JSONResponse(store.get_ui_settings())
+
+    @app.post("/ui/tile-numbers")
+    async def ui_tile_numbers(body: dict[str, Any] = Body(default={})) -> JSONResponse:
+        """
+        Toggle whether tile numbers are rendered on the heatmap.
+
+        Input JSON:
+          { "enabled": true|false }
+
+        Returns:
+          - A small compatibility shape (`enabled`) for older clients
+          - Plus the full UI settings as the authoritative current state
+        """
+        enabled_raw = body.get("enabled")
+        if not isinstance(enabled_raw, bool):
+            return JSONResponse({"error": "enabled must be a boolean"}, status_code=400)
+
+        store.set_show_tile_numbers(enabled_raw)
+        return JSONResponse({"enabled": store.get_show_tile_numbers(), **store.get_ui_settings()})
 
     @app.get("/status")
     async def status() -> JSONResponse:
-        """Return the latest status payload (single snapshot)."""
+        """
+        Return the latest status payload.
+
+        This is the main endpoint polled by the browser UI and external clients.
+        """
         return JSONResponse(store.get_payload())
 
     @app.get("/history")
     async def history() -> JSONResponse:
-        """Return the recent status payload history for charting/visualization."""
+        """
+        Return recent status samples as a list.
+
+        The UI chart uses this endpoint to render a time-series view.
+        """
         return JSONResponse({"history": store.get_payload_history()})
-
-    @app.get("/ui")
-    async def ui_settings() -> JSONResponse:
-        """Return server-controlled UI settings (e.g. tile number overlay)."""
-        return JSONResponse(store.get_ui_settings())
-
-    @app.post("/ui/tile-numbers")
-    async def set_tile_numbers(req: TileNumbersRequest) -> JSONResponse:
-        """Enable/disable tile numbers on the selector overlay (server-controlled)."""
-        store.set_show_tile_numbers(req.enabled)
-        return JSONResponse({"ok": True, "show_tile_numbers": store.get_show_tile_numbers()})
 
     @app.post("/quit")
     async def quit_app() -> JSONResponse:
-        """Request a graceful shutdown of the overall application via the shared store flag."""
+        """
+        Request application shutdown.
+
+        The server itself does not exit the process; it signals via StatusStore so the
+        main application loop can perform a clean shutdown (stop threads, release resources).
+        """
         store.request_quit()
         return JSONResponse({"ok": True})
+
+    @app.get("/tiles")
+    async def get_tiles() -> JSONResponse:
+        """
+        Return the currently disabled tile indices (0-based).
+
+        Used by the UI to initialize the mask and reconcile client/server state.
+        """
+        return JSONResponse({"disabled_tiles": store.get_disabled_tiles()})
+
+    @app.get("/ui/settings")
+    async def ui_settings() -> JSONResponse:
+        """
+        Compatibility alias for UI settings.
+
+        Some older clients may call /ui/settings instead of /ui.
+        """
+        return JSONResponse(store.get_ui_settings())
+
+    @app.put("/tiles")
+    async def put_tiles(body: dict[str, Any] = Body(...)) -> JSONResponse:
+        """
+        Replace the set of disabled tile indices (0-based).
+
+        Input JSON:
+          { "disabled_tiles": [0, 2, 8] }
+
+        Validation:
+        - Must be a list of integers. Range validation (0..N-1) is owned by the store
+          or by the producer that knows N (grid size).
+        """
+        raw = body.get("disabled_tiles", [])
+        if not isinstance(raw, list) or not all(isinstance(x, int) for x in raw):
+            return JSONResponse({"error": "disabled_tiles must be a list[int]"}, status_code=400)
+
+        store.set_disabled_tiles(raw)
+        return JSONResponse({"disabled_tiles": store.get_disabled_tiles()})
 
     return app
 
 
 def run_server_in_thread(*, host: str, port: int, store: StatusStore) -> threading.Thread:
-    """Start the FastAPI server in a daemon thread so the main process can continue running."""
+    """
+    Run the FastAPI server in a background thread.
+
+    Why a thread:
+    - The main application has its own UI event loop + monitor loop.
+    - Running Uvicorn in a daemon thread keeps integration simple without additional processes.
+
+    Notes:
+    - `log_level="error"` keeps console noise low; adjust if debugging routing issues.
+    - The returned thread is daemonized; application shutdown should be coordinated via
+      StatusStore.quit_requested (or similar) in the main thread.
+    """
     app = create_app(store)
 
     def _run() -> None:
-        """Thread entrypoint; blocks until uvicorn stops."""
-        uvicorn.run(
-            app,
-            host=host,
-            port=int(port),
-            log_level="warning",
-            access_log=False,
-        )
+        # Uvicorn manages its own event loop internally.
+        uvicorn.run(app, host=host, port=port, log_level="error")
 
-    t = threading.Thread(target=_run, name="motiondetector-server", daemon=True)
+    t = threading.Thread(target=_run, daemon=True)
     t.start()
     return t

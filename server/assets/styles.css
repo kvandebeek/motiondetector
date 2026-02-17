@@ -1,0 +1,209 @@
+:root {
+  --bg: #0b0e14;
+  --panel: #0f1420;
+  --panel2: #0c111b;
+  --text: #e8eefc;
+  --muted: #9aa7c6;
+  --border: rgba(255, 255, 255, 0.08);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  background: var(--bg);
+  color: var(--text);
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border);
+  gap: 12px;
+}
+
+header h1 {
+  font-size: 20px;
+  margin: 0;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+button {
+  background: #121a2b;
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+button:hover { border-color: rgba(255, 255, 255, 0.18); }
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  font-weight: 700;
+  font-size: 13px;
+  user-select: none;
+}
+
+.toggle input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: #68b7ff;
+  cursor: pointer;
+}
+
+.grid {
+  padding: 16px;
+  display: grid;
+  grid-template-columns: 1.25fr 1fr 0.75fr;
+  gap: 14px;
+}
+
+.panel {
+  background: linear-gradient(180deg, var(--panel), var(--panel2));
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px 12px 10px;
+  overflow: hidden;
+  min-height: 200px;
+}
+
+.panel h2 {
+  margin: 0 0 10px 0;
+  font-size: 14px;
+  color: var(--muted);
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.pillrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  font-weight: 700;
+  font-size: 13px;
+}
+
+pre {
+  margin: 0;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.25);
+  color: #e9f2ff;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow: auto;
+  height: 520px;
+}
+
+.chartwrap {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.18);
+  padding: 10px;
+}
+
+/* Keep general canvases consistent */
+canvas {
+  width: 100%;
+  height: 540px;
+  display: block;
+}
+
+.heatwrap {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.18);
+  padding: 10px;
+}
+
+/* Tiles heatmap is responsive via JS aspectRatio + height:auto */
+#tilesHeatmap {
+  width: 100%;
+  height: auto;
+  display: block;
+  aspect-ratio: 16 / 9;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+/* Override the generic canvas height for this specific canvas */
+canvas#tilesHeatmap {
+  height: auto;
+}
+
+.subtle {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/*
+  IMPORTANT:
+  Your tiles heatmap is drawn on a <canvas>.
+  The .tile/.tile::after rules below only apply if you also render HTML tiles.
+  Keeping them here is harmless, but they won't affect the canvas heatmap.
+*/
+.tile { position: relative; }
+
+.tile::after {
+  content: attr(data-idx);
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  opacity: 0.9;
+  color: rgba(255, 255, 255, 0.95);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  z-index: 3;
+}
+
+.tile.disabled::after {
+  color: rgba(0, 0, 0, 0.7);
+  text-shadow: none;
+  opacity: 0.85;
+}
+
+/* Responsive layout */
+@media (max-width: 1200px) {
+  .grid { grid-template-columns: 1fr; }
+  pre { height: 360px; }
+}

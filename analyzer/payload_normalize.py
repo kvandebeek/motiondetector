@@ -5,34 +5,63 @@ payload_normalize.py
 
 Builds the normalized JSON payload emitted by the monitor/analyzer.
 
-This module deliberately centralizes the wire-format so other parts of the app
-(UI/server/clients) can rely on a stable schema.
+This module centralizes the wire-format so other parts of the app (server/UI/clients)
+can rely on a stable schema.
 
-Notes:
-- Timestamps are UNIX epoch seconds (float).
-- Numeric fields are explicitly cast to built-in Python types to avoid
-  serialization surprises (e.g., numpy scalars).
-- Tile keys are currently fixed to 9 entries: tile1..tile9.
+Schema goals:
+- No duplicated representations of the same data (no tile1..tileN + tiles + tiles_named).
+- Tiles are a single ordered list; disabled tiles are represented as None + an index list.
+- Keep "debug" out of the default payload (gate it elsewhere if needed).
+- Keep timestamp sources consistent.
 """
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional, Sequence
+import math
 import time
 
 
 @dataclass(frozen=True)
 class RegionPayload:
     """
-    Serializable region description of the monitored screen area.
+    JSON-serializable description of the monitored region.
 
-    Kept small and strictly typed because it is sent across process boundaries
-    (e.g., to the server/UI).
+    Notes:
+    - `monitor_id` is intended to identify the source monitor (if known) in a way that
+      is consistent with the capture backend (e.g., MSS monitor indices).
+    - x/y/width/height are expressed in the same coordinate space as capture (typically
+      virtual desktop coordinates for MSS).
     """
     monitor_id: int
     x: int
     y: int
     width: int
     height: int
+
+
+def _finite_or_none(v: object) -> float | None:
+    """
+    Convert an arbitrary tile value into a JSON-safe float or None.
+
+    Conventions:
+    - None => None (used to represent a disabled/masked tile).
+    - NaN/Inf => None (invalid measurement; JSON consumers should treat as missing).
+    - bool => None (avoid `True/False` silently becoming 1.0/0.0).
+    - int/float => float(v) if finite.
+    - anything else => None.
+
+    Rationale:
+    - JSON has no NaN/Inf, and different serializers handle them differently.
+      Normalizing here avoids “sometimes invalid JSON” bugs downstream.
+    """
+    if v is None:
+        return None
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        fv = float(v)
+        return None if (math.isnan(fv) or math.isinf(fv)) else fv
+    return None
 
 
 def build_payload(
@@ -43,74 +72,96 @@ def build_payload(
     video_state: str,
     confidence: float,
     motion_mean: float,
-    tiles: tuple[float, ...],
-    last_phash_change_ts: float,
+    tiles: Sequence[object],
+    grid_rows: int,
+    grid_cols: int,
     stale: bool,
     stale_age_sec: float,
     region: RegionPayload,
+    overall_state: str,
+    overall_reasons: Sequence[str],
+    errors: Optional[Sequence[str]] = None,
+    ts: Optional[float] = None,
 ) -> dict[str, Any]:
     """
     Create the normalized payload expected by downstream consumers.
 
+    Key guarantees:
+    - Stable schema (keys and nesting remain consistent across the app).
+    - `tiles` is always a list of length rows*cols, row-major.
+    - `disabled_tiles` is derived from tiles where value is None.
+    - Timestamp is always epoch seconds as float.
+
     Args:
         capture_state: Capture subsystem state (e.g., "OK", "ERROR").
-        capture_reason: Human-readable reason for capture_state (debuggable string).
-        backend: Capture backend identifier (e.g., "WGC", "MSS", etc.).
+        capture_reason: Human-readable reason for capture_state.
+        backend: Capture backend identifier (e.g., "MSS").
         video_state: Motion classification state (e.g., "MOTION", "NO_MOTION").
-        confidence: Classifier confidence in [0..1] (caller defines semantics).
-        motion_mean: Overall/aggregate motion metric (caller defines scale).
-        tiles: Per-tile motion metrics (currently expected length == 9).
-        last_phash_change_ts: Timestamp (epoch seconds) when pHash last changed.
-        stale: Whether the payload is considered stale (no updates recently, etc.).
+        confidence: Classifier confidence (caller defines semantics; typically 0..1).
+        motion_mean: Aggregate motion metric (caller defines semantics; typically 0..1).
+        tiles: Per-tile motion metrics; must be length == grid_rows * grid_cols.
+               Disabled tiles should be passed as None (NaN/Inf also become None).
+        grid_rows: Tile grid rows (> 0).
+        grid_cols: Tile grid cols (> 0).
+        stale: Whether the payload is considered stale (consumer should treat as not current).
         stale_age_sec: How long (seconds) the payload has been stale.
         region: Region geometry for the monitored area.
+        overall_state: High-level state (e.g., "OK" / "NOT_OK").
+        overall_reasons: List of reason strings (stable identifiers).
+        errors: Optional list of error strings.
+        ts: Optional timestamp override (epoch seconds). If omitted, uses time.time().
 
     Returns:
         A dict ready for JSON serialization.
     """
-    # Single time source for this payload to keep fields consistent.
-    ts = time.time()
+    # Single timestamp source for the entire payload.
+    # Allow override for deterministic tests or when a timestamp is computed upstream.
+    now_ts = float(time.time() if ts is None else ts)
 
-    # Map tile metrics to stable JSON keys.
-    # Assumption: tiles has 9 elements for a 3x3 grid.
-    tiles_map = {f"tile{i+1}": float(tiles[i]) for i in range(9)}
+    # Validate grid dimensions early to avoid producing malformed payloads.
+    rows = int(grid_rows)
+    cols = int(grid_cols)
+    if rows <= 0 or cols <= 0:
+        raise ValueError("grid_rows and grid_cols must be positive integers")
 
-    # Compute an "overall" health/state summary for quick consumer checks.
-    # Current rule: anything other than NO_MOTION is "OK".
-    overall_ok = video_state != "NO_MOTION"
+    expected = rows * cols
+
+    # Defensive validation: a mismatched tiles list breaks clients that assume fixed indexing.
+    if len(tiles) != expected:
+        raise ValueError(f"tiles length must be {expected} for grid {rows}x{cols}")
+
+    # Normalize each tile value into a JSON-friendly representation.
+    tiles_list: list[float | None] = [_finite_or_none(v) for v in tiles]
+
+    # Disabled tiles are those explicitly None after normalization (disabled or invalid).
+    # Keeping both representations is useful: tiles carries nulls; disabled_tiles makes it easy
+    # for clients to style/skip tiles without scanning the entire list.
+    disabled_tiles = [i for i, v in enumerate(tiles_list) if v is None]
 
     return {
-        # Emission timestamp for this payload.
-        "timestamp": float(ts),
+        "timestamp": now_ts,
         "capture": {
-            # Capture pipeline status and metadata.
-            "state": capture_state,
-            "reason": capture_reason,
-            "backend": backend,
+            "state": str(capture_state),
+            "reason": str(capture_reason),
+            "backend": str(backend),
         },
         "video": {
-            # Motion classification and metrics.
-            "state": video_state,
+            "state": str(video_state),
             "confidence": float(confidence),
             "motion_mean": float(motion_mean),
-            # Per-tile motion values (tile1..tile9).
-            **tiles_map,
-            # Telemetry for "change detection" and staleness.
-            "last_phash_change_ts": float(last_phash_change_ts),
-            "last_update_ts": float(ts),
+            "grid": {"rows": rows, "cols": cols},
+            "tiles": tiles_list,
+            "disabled_tiles": disabled_tiles,
             "stale": bool(stale),
             "stale_age_sec": float(stale_age_sec),
         },
         "overall": {
-            # High-level status for consumers that don't care about details.
-            "state": "OK" if overall_ok else "NOT_OK",
-            # Reasons list is structured for future expansion (multiple reasons).
-            "reasons": ["ok"] if overall_ok else ["no_motion_all_tiles"],
+            "state": str(overall_state),
+            "reasons": [str(r) for r in overall_reasons],
         },
-        # Reserved for structured errors (e.g., capture exceptions, encoder failures).
-        "errors": [],
+        # Normalize errors to a list for schema stability.
+        "errors": list(errors) if errors is not None else [],
         "region": {
-            # Region information is explicitly cast for JSON safety.
             "monitor_id": int(region.monitor_id),
             "x": int(region.x),
             "y": int(region.y),

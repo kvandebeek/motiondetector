@@ -38,43 +38,6 @@ Optional: record short clips based on motion state.
 
 ---
 
-## Repository layout
-
-.
-├─ main.py
-├─ readme.md
-├─ requirements.lock.txt
-├─ analyzer/
-│ ├─ capture.py
-│ ├─ monitor_loop.py
-│ ├─ monitor_windows.py
-│ ├─ payload_normalize.py
-│ └─ recorder.py
-├─ config/
-│ ├─ config.json
-│ └─ config.py
-├─ server/
-│ ├─ server.py
-│ ├─ state_machine.py
-│ ├─ status_store.py
-│ ├─ server_html_contents.py
-│ └─ assets/
-│ ├─ index.html
-│ └─ app.js
-└─ ui/
-├─ tiles_sync.py
-├─ selector/
-│ ├─ ui_logic.py
-│ ├─ window.py
-│ ├─ models.py
-│ ├─ grid.py
-│ ├─ interaction.py
-│ ├─ region_emit.py
-│ └─ ui_settings.py
-└─ (win32 helpers: dpi/geometry)
-
----
-
 ## How it works
 
 1) **DPI awareness (Windows)**  

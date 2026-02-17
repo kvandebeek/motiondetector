@@ -15,8 +15,8 @@
     "history_seconds": 120,
     "mean_full_scale": 0.08,
     "tile_full_scale": 0.16,
-    "grid_cols": 8,
-    "grid_rows": 8
+    "grid_cols": 16,
+    "grid_rows": 16
   },
   "recording": {
     "enabled": true,

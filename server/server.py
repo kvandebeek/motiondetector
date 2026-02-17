@@ -6,9 +6,14 @@ from typing import Any  # reserved for future expansion (kept if other modules i
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse
+from pydantic import BaseModel
 
 from server.server_html_contents import get_index_html
 from server.status_store import StatusStore
+
+
+class TileNumbersRequest(BaseModel):
+    enabled: bool
 
 
 def create_app(store: StatusStore) -> FastAPI:
@@ -31,8 +36,18 @@ def create_app(store: StatusStore) -> FastAPI:
     @app.get("/history")
     async def history() -> JSONResponse:
         """Return the recent status payload history for charting/visualization."""
-        # List of status payloads (each payload already contains timestamp + motion_mean etc.)
         return JSONResponse({"history": store.get_payload_history()})
+
+    @app.get("/ui")
+    async def ui_settings() -> JSONResponse:
+        """Return server-controlled UI settings (e.g. tile number overlay)."""
+        return JSONResponse(store.get_ui_settings())
+
+    @app.post("/ui/tile-numbers")
+    async def set_tile_numbers(req: TileNumbersRequest) -> JSONResponse:
+        """Enable/disable tile numbers on the selector overlay (server-controlled)."""
+        store.set_show_tile_numbers(req.enabled)
+        return JSONResponse({"ok": True, "show_tile_numbers": store.get_show_tile_numbers()})
 
     @app.post("/quit")
     async def quit_app() -> JSONResponse:
@@ -53,8 +68,8 @@ def run_server_in_thread(*, host: str, port: int, store: StatusStore) -> threadi
             app,
             host=host,
             port=int(port),
-            log_level="warning",  # keep logs minimal; main app can decide what to print
-            access_log=False,  # avoid per-request access logs (status polling can be frequent)
+            log_level="warning",
+            access_log=False,
         )
 
     t = threading.Thread(target=_run, name="motiondetector-server", daemon=True)

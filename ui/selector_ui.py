@@ -6,7 +6,7 @@ import threading
 from typing import Callable, Literal
 
 from PySide6.QtCore import Qt, QRect, QPoint, QTimer
-from PySide6.QtGui import QPainter, QPen
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen
 from PySide6.QtWidgets import QApplication, QWidget
 
 from analyzer.capture import Region
@@ -29,6 +29,10 @@ def _round_int(x: float) -> int:
     return int(round(x))
 
 
+def _clamp_int(v: int, lo: int, hi: int) -> int:
+    return max(lo, min(hi, v))
+
+
 class SelectorWindow(QWidget):
     def __init__(
         self,
@@ -41,6 +45,8 @@ class SelectorWindow(QWidget):
         grid_rows: int = 3,
         grid_cols: int = 3,
         emit_inset_px: int = 10,
+        tile_label_text_color: str = "#FFFFFF",
+        show_tile_numbers: bool = True,
     ) -> None:
         super().__init__()
 
@@ -62,6 +68,16 @@ class SelectorWindow(QWidget):
         # This helps avoid the overlay itself being captured/affecting motion detection.
         self._emit_inset_px = int(emit_inset_px)
 
+        # Tile labels toggle.
+        self._show_tile_numbers = bool(show_tile_numbers)
+
+        # Tile label colors.
+        self._tile_label_bg = QColor(0, 0, 0, 140)
+        self._tile_label_fg = QColor(tile_label_text_color)
+        if not self._tile_label_fg.isValid():
+            self._tile_label_fg = QColor("#FFFFFF")
+        self._tile_label_fg.setAlpha(230)
+
         # Drag state: what operation is active, and the start state for delta calculations.
         self._drag_mode: ResizeMode = "none"
         self._drag_start_pos = QPoint(0, 0)  # global mouse position at press time
@@ -81,6 +97,13 @@ class SelectorWindow(QWidget):
         self.setGeometry(initial.x, initial.y, initial.width, initial.height)
         self._emit_region()
 
+    def set_show_tile_numbers(self, enabled: bool) -> None:
+        v = bool(enabled)
+        if v == self._show_tile_numbers:
+            return
+        self._show_tile_numbers = v
+        self.update()
+
     def _inner_rect(self) -> QRect:
         # Compute the drawable/captured area inside the border and extra inset.
         # Returned rect is in widget-local logical pixels.
@@ -93,12 +116,9 @@ class SelectorWindow(QWidget):
 
     def _dpr(self) -> float:
         # Device pixel ratio (DPR) is used to convert logical (Qt) pixels to physical pixels.
-        # On Windows with display scaling this is typically 1.25 / 1.5 / 2.0 etc.
-        # MSS captures in physical pixels, so capture coordinates must be scaled.
         try:
             return float(self.devicePixelRatioF())
         except Exception:
-            # Conservative default: assume no scaling if DPR can't be queried.
             return 1.0
 
     def _emit_region(self) -> None:
@@ -115,28 +135,51 @@ class SelectorWindow(QWidget):
         w = _round_int(float(inner.width()) * dpr)
         h = _round_int(float(inner.height()) * dpr)
 
-        # Ensure a valid capture area (MSS expects positive size).
         w = max(1, w)
         h = max(1, h)
 
         self._on_region_change(Region(x=x, y=y, width=w, height=h))
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
-        # Ensure the owning controller can react to the selector UI being closed.
         self._on_close()
         event.accept()
 
     @staticmethod
     def _edges(size: int, parts: int) -> list[int]:
-        # Split [0..size] into 'parts' segments using rounding so boundaries line up.
-        # Returns a list of pixel offsets with length parts+1 (including 0 and size).
         out = [int(round(i * size / parts)) for i in range(parts + 1)]
         out[0] = 0
         out[parts] = int(size)
         return out
 
+    def _tile_font(self, *, tile_h: int) -> QFont:
+        px = _clamp_int(int(round(tile_h * 0.24)), 10, 32)
+        f = QFont()
+        f.setPixelSize(px)
+        f.setBold(True)
+        return f
+
+    def _draw_centered_tile_label(self, p: QPainter, *, tile: QRect, label: str) -> None:
+        fm = QFontMetrics(p.font())
+        tw = fm.horizontalAdvance(label)
+        th = fm.height()
+
+        pad = _clamp_int(int(round(min(tile.width(), tile.height()) * 0.06)), 4, 10)
+        bw = min(tile.width(), tw + 2 * pad)
+        bh = min(tile.height(), th + 2 * pad)
+
+        bx = tile.left() + max(0, (tile.width() - bw) // 2)
+        by = tile.top() + max(0, (tile.height() - bh) // 2)
+        bg = QRect(bx, by, bw, bh)
+
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(self._tile_label_bg)
+        radius = _clamp_int(int(round(min(bg.width(), bg.height()) * 0.22)), 4, 12)
+        p.drawRoundedRect(bg, radius, radius)
+
+        p.setPen(self._tile_label_fg)
+        p.drawText(bg, Qt.AlignmentFlag.AlignCenter, label)
+
     def paintEvent(self, event) -> None:  # type: ignore[override]
-        # Draw the inner border + dashed grid overlay.
         _ = event
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
@@ -159,7 +202,6 @@ class SelectorWindow(QWidget):
         w = inner.width()
         h = inner.height()
 
-        # Compute rounded edges so each tile spans the full width/height without gaps.
         x_edges = self._edges(w, self._grid_cols)
         y_edges = self._edges(h, self._grid_rows)
 
@@ -178,9 +220,30 @@ class SelectorWindow(QWidget):
             y = top + y_edges[i]
             p.drawLine(left, y, right, y)
 
+        if not self._show_tile_numbers:
+            return
+
+        # Centered tile numbers (1..N), left-to-right, top-to-bottom.
+        p.setFont(self._tile_font(tile_h=max(1, h // self._grid_rows)))
+
+        for row in range(self._grid_rows):
+            y0 = top + y_edges[row]
+            y1 = top + y_edges[row + 1]
+            for col in range(self._grid_cols):
+                x0 = left + x_edges[col]
+                x1 = left + x_edges[col + 1]
+
+                tile = QRect(
+                    x0,
+                    y0,
+                    max(1, x1 - x0),
+                    max(1, y1 - y0),
+                ).adjusted(0, 0, -1, -1)
+
+                idx = row * self._grid_cols + col + 1
+                self._draw_centered_tile_label(p, tile=tile, label=str(idx))
+
     def _hit_test(self, pos: QPoint) -> ResizeMode:
-        # Determine which resize handle (or move) the cursor is over.
-        # Uses a margin around the window edges/corners, not the inner rect.
         margin = 12
         x = pos.x()
         y = pos.y()
@@ -211,7 +274,6 @@ class SelectorWindow(QWidget):
         return "move"
 
     def mousePressEvent(self, event) -> None:  # type: ignore[override]
-        # Start a move/resize operation on left click.
         if event.button() != Qt.MouseButton.LeftButton:
             return
         self._drag_mode = self._hit_test(event.position().toPoint())
@@ -219,8 +281,6 @@ class SelectorWindow(QWidget):
         self._start_geom = self.geometry()
 
     def mouseMoveEvent(self, event) -> None:  # type: ignore[override]
-        # While not dragging: update cursor shape.
-        # While dragging: update window geometry and emit the new capture region.
         pos = event.position().toPoint()
         mode = self._hit_test(pos)
 
@@ -231,7 +291,6 @@ class SelectorWindow(QWidget):
         delta = event.globalPosition().toPoint() - self._drag_start_pos
         g = QRect(self._start_geom)
 
-        # Prevent collapsing to near-zero size during resize.
         min_w = 120
         min_h = 90
 
@@ -241,7 +300,6 @@ class SelectorWindow(QWidget):
             dx = delta.x()
             dy = delta.y()
 
-            # Adjust edges based on drag handle.
             if "l" in self._drag_mode:
                 g.setLeft(g.left() + dx)
             if "r" in self._drag_mode:
@@ -251,7 +309,6 @@ class SelectorWindow(QWidget):
             if "b" in self._drag_mode:
                 g.setBottom(g.bottom() + dy)
 
-            # Clamp width/height by adjusting the active edge back into bounds.
             if g.width() < min_w:
                 if "l" in self._drag_mode:
                     g.setLeft(g.right() - min_w)
@@ -265,16 +322,14 @@ class SelectorWindow(QWidget):
                     g.setBottom(g.top() + min_h)
 
         self.setGeometry(g)
-        self._emit_region()  # keep capture region in sync with the current window geometry
-        self.update()  # repaint border/grid after geometry changes
+        self._emit_region()
+        self.update()
 
     def mouseReleaseEvent(self, event) -> None:  # type: ignore[override]
-        # End current move/resize operation.
         _ = event
         self._drag_mode = "none"
 
     def _set_cursor(self, mode: ResizeMode) -> None:
-        # Map hit-test result to an appropriate cursor shape.
         if mode in ("l", "r"):
             self.setCursor(Qt.CursorShape.SizeHorCursor)
         elif mode in ("t", "b"):
@@ -298,8 +353,9 @@ def run_selector_ui(
     grid_rows: int = 3,
     grid_cols: int = 3,
     emit_inset_px: int = 10,
+    tile_label_text_color: str = "#FFFFFF",
+    show_tile_numbers: bool = True,
 ) -> None:
-    # Entrypoint to run the selector UI in a thread: creates its own QApplication loop.
     app = QApplication([])
     w = SelectorWindow(
         initial=initial,
@@ -310,15 +366,15 @@ def run_selector_ui(
         grid_rows=grid_rows,
         grid_cols=grid_cols,
         emit_inset_px=emit_inset_px,
+        tile_label_text_color=tile_label_text_color,
+        show_tile_numbers=show_tile_numbers,
     )
     w.show()
 
-    # Poll for the quit flag because this UI is typically controlled from another thread.
     timer = QTimer()
     timer.setInterval(200)
 
     def on_tick() -> None:
-        # Stop the UI loop when the owner sets the quit flag.
         if quit_flag.is_set():
             timer.stop()
             w.close()

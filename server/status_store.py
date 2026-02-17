@@ -22,6 +22,7 @@ class StatusStore:
     Thread-safe store for:
       - the latest status payload (for fast polling by the API/server)
       - a rolling window of status history (for charts/debugging/clients)
+      - simple UI settings toggles (server-controlled)
 
     The analyzer thread typically calls set_latest(), while the web server thread
     calls get_latest()/get_history() concurrently.
@@ -33,6 +34,13 @@ class StatusStore:
         self._latest: JsonDict = self._default_payload(reason="not_initialized")  # safe initial state
         self._history: Deque[StatusSample] = deque()  # append-only; trimmed by time window
         self._quit_requested = False  # shared shutdown flag for cooperating threads
+
+        # UI settings (server-controlled)
+        self._show_tile_numbers = True
+
+    # ----------------------------
+    # Status payload + history
+    # ----------------------------
 
     def set_latest(self, payload: JsonDict) -> None:
         # Update latest payload + append to history, trimming old samples.
@@ -64,6 +72,26 @@ class StatusStore:
         # Compatibility alias: some callers use this method name.
         return self.get_history()
 
+    # ----------------------------
+    # UI settings
+    # ----------------------------
+
+    def set_show_tile_numbers(self, enabled: bool) -> None:
+        with self._lock:
+            self._show_tile_numbers = bool(enabled)
+
+    def get_show_tile_numbers(self) -> bool:
+        with self._lock:
+            return bool(self._show_tile_numbers)
+
+    def get_ui_settings(self) -> JsonDict:
+        with self._lock:
+            return {"show_tile_numbers": bool(self._show_tile_numbers)}
+
+    # ----------------------------
+    # Quit signalling
+    # ----------------------------
+
     def request_quit(self) -> None:
         # Cooperative shutdown: set a flag that other threads can poll.
         with self._lock:
@@ -73,6 +101,10 @@ class StatusStore:
         # Poll shutdown flag (thread-safe).
         with self._lock:
             return self._quit_requested
+
+    # ----------------------------
+    # Internals
+    # ----------------------------
 
     def _trim_locked(self, now: float) -> None:
         # Remove samples older than (now - history_seconds).

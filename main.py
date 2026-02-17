@@ -31,38 +31,18 @@ class SharedRegion:
 
 
 def main() -> int:
-    """
-    Application entry point.
-
-    Responsibilities:
-    - Set Windows DPI awareness so screen coordinates match physical pixels.
-    - Load configuration.
-    - Start the status store + API server for live telemetry.
-    - Start the monitor loop that captures frames and computes motion statistics.
-    - Start the PySide6 UI overlay that lets the user select the region being monitored.
-    - Handle shutdown by coordinating UI -> store quit flag -> monitor loop stop/join.
-    """
-    # Ensure Windows scaling (125%/150%) does not distort screen coordinates.
-    # Without this, the selected overlay region can mismatch the captured pixels.
     set_process_dpi_awareness()
 
-    # Load runtime settings (capture backend, thresholds, grid size, server port, etc.).
     cfg = load_config("./config/config.json")
 
-    # Shared in-memory state for telemetry/history and quit signalling.
-    # MonitorLoop writes status snapshots into the store; the server reads from it.
     store = StatusStore(history_seconds=cfg.history_seconds)
 
-    # Start the FastAPI/uvicorn server in a background thread.
-    # The returned thread is stored to prevent accidental garbage collection and
-    # to document intent; the process lifetime is driven by the Qt event loop.
     _server_thread = run_server_in_thread(
         host=cfg.server_host,
         port=cfg.server_port,
         store=store,
     )
 
-    # Initialize the capture region from config, but allow the UI to mutate it at runtime.
     shared = SharedRegion(
         lock=threading.Lock(),
         region=Region(
@@ -74,11 +54,6 @@ def main() -> int:
     )
 
     def get_region() -> Region:
-        """
-        Called by the monitor loop thread to obtain the latest region.
-
-        Returns a defensive copy so callers never hold a reference to mutable shared state.
-        """
         with shared.lock:
             return Region(
                 x=shared.region.x,
@@ -88,20 +63,11 @@ def main() -> int:
             )
 
     def set_region(r: Region) -> None:
-        """
-        Called by the UI thread when the user moves/resizes the overlay selection.
-        """
         with shared.lock:
             shared.region = r
 
-    # Create a screen capturer for the chosen backend (e.g. WGC / MSS / etc.).
     capturer = ScreenCapturer(cfg.capture_backend)
 
-    # Start the monitoring loop:
-    # - Captures the selected region at cfg.fps.
-    # - Computes motion signals (mean + per-tile).
-    # - Updates StatusStore history.
-    # - Optionally triggers recording based on state transitions.
     loop = MonitorLoop(
         store=store,
         capturer=capturer,
@@ -125,18 +91,11 @@ def main() -> int:
     )
     loop.start()
 
-    # Start the Qt application (UI must run on the main thread).
     app = QApplication([])
 
     def on_close() -> None:
-        """
-        Called when the selector window is closed.
-        Instead of hard-exiting immediately, we request a quit in the shared store.
-        The QTimer below observes that flag and exits the Qt event loop safely.
-        """
         store.request_quit()
 
-    # Transparent always-on-top overlay for selecting the region and visualizing grid lines.
     selector = SelectorWindow(
         initial=UiRegion(
             x=cfg.initial_region["x"],
@@ -150,22 +109,25 @@ def main() -> int:
         on_region_change=set_region,
         grid_rows=cfg.grid_rows,
         grid_cols=cfg.grid_cols,
+        show_tile_numbers=store.get_show_tile_numbers(),
     )
     selector.show()
 
-    # Poll for shutdown request without busy-waiting.
-    # This avoids cross-thread UI calls; Qt stays responsive and we exit cleanly.
     timer = QTimer()
     timer.setInterval(200)
 
-    # If quit was requested (e.g. window closed), stop the Qt event loop.
-    timer.timeout.connect(lambda: app.quit() if store.quit_requested() else None)
+    def on_tick() -> None:
+        if store.quit_requested():
+            app.quit()
+            return
+
+        selector.set_show_tile_numbers(store.get_show_tile_numbers())
+
+    timer.timeout.connect(on_tick)  # type: ignore[arg-type]
     timer.start()
 
-    # Blocks here until app.quit() is called or the last window closes.
     exit_code = app.exec()
 
-    # Post-UI shutdown: stop monitoring thread and wait briefly for it to terminate.
     loop.stop()
     loop.join(timeout=2.0)
 
@@ -173,5 +135,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    # Convert the returned int into a proper process exit code.
     raise SystemExit(main())

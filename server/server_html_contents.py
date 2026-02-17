@@ -33,14 +33,16 @@ def get_index_html(*, history_seconds: int) -> str:
       justify-content: space-between;
       padding: 16px 18px;
       border-bottom: 1px solid var(--border);
+      gap: 12px;
     }}
     header h1 {{
       font-size: 20px;
       margin: 0;
       font-weight: 700;
       letter-spacing: 0.2px;
+      white-space: nowrap;
     }}
-    .actions {{ display: flex; gap: 10px; }}
+    .actions {{ display: flex; gap: 10px; align-items:center; flex-wrap: wrap; justify-content: flex-end; }}
     button {{
       background: #121a2b;
       border: 1px solid var(--border);
@@ -51,6 +53,26 @@ def get_index_html(*, history_seconds: int) -> str:
       font-weight: 600;
     }}
     button:hover {{ border-color: rgba(255,255,255,0.18); }}
+
+    .toggle {{
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.03);
+      font-weight: 700;
+      font-size: 13px;
+      user-select: none;
+    }}
+    .toggle input {{
+      width: 18px;
+      height: 18px;
+      margin: 0;
+      accent-color: #68b7ff;
+      cursor: pointer;
+    }}
 
     .grid {{
       padding: 16px;
@@ -125,7 +147,7 @@ def get_index_html(*, history_seconds: int) -> str:
       width: 100%;
       height: auto;
       display: block;
-      aspect-ratio: 16 / 9; /* fallback; JS will override per region */
+      aspect-ratio: 16 / 9;
       border-radius: 10px;
     }}
 
@@ -136,6 +158,10 @@ def get_index_html(*, history_seconds: int) -> str:
   <header>
     <h1>motiondetector</h1>
     <div class="actions">
+      <label class="toggle" title="Show numbers on the selector overlay grid">
+        <input id="toggleTileNumbers" type="checkbox" />
+        <span>Tile numbers</span>
+      </label>
       <button id="copyJson">Copy JSON</button>
       <button id="quitBtn">Quit</button>
     </div>
@@ -173,6 +199,8 @@ def get_index_html(*, history_seconds: int) -> str:
 <script>
 const STATUS_URL = '/status';
 const HISTORY_URL = '/history';
+const UI_URL = '/ui';
+const TILE_NUMBERS_URL = '/ui/tile-numbers';
 
 const jsonBox = document.getElementById('jsonBox');
 const tsLabel = document.getElementById('tsLabel');
@@ -183,6 +211,7 @@ const gridLabel = document.getElementById('gridLabel');
 
 const copyBtn = document.getElementById('copyJson');
 const quitBtn = document.getElementById('quitBtn');
+const toggleTileNumbers = document.getElementById('toggleTileNumbers');
 
 function clamp01(x) {{
   if (x < 0) return 0;
@@ -231,6 +260,17 @@ function fmtTime(ts) {{
 
 async function fetchJson(url) {{
   const res = await fetch(url, {{ cache: 'no-store' }});
+  if (!res.ok) throw new Error(`HTTP ${{res.status}}`);
+  return await res.json();
+}}
+
+async function postJson(url, body) {{
+  const res = await fetch(url, {{
+    method: 'POST',
+    headers: {{ 'Content-Type': 'application/json' }},
+    body: JSON.stringify(body),
+    cache: 'no-store',
+  }});
   if (!res.ok) throw new Error(`HTTP ${{res.status}}`);
   return await res.json();
 }}
@@ -312,7 +352,6 @@ function drawChart(historyPayloads) {{
 }}
 
 function edges(size, parts) {{
-  // Integer-stable boundaries to avoid drift/clipping with many tiles.
   const out = new Array(parts + 1);
   for (let i = 0; i <= parts; i++) out[i] = Math.round((i * size) / parts);
   out[0] = 0;
@@ -372,7 +411,6 @@ function drawTilesHeatmap(payload) {{
     }}
   }}
 
-  // grid lines on exact edges (no drift)
   ctx.strokeStyle = 'rgba(0,0,0,0.25)';
   ctx.lineWidth = 1;
 
@@ -421,6 +459,28 @@ quitBtn.addEventListener('click', async () => {{
   }} catch {{}}
 }});
 
+toggleTileNumbers.addEventListener('change', async () => {{
+  try {{
+    await postJson(TILE_NUMBERS_URL, {{ enabled: Boolean(toggleTileNumbers.checked) }});
+  }} catch {{
+    // if POST fails, revert by refetching current value
+    try {{
+      const ui = await fetchJson(UI_URL);
+      toggleTileNumbers.checked = Boolean(ui?.show_tile_numbers);
+    }} catch {{}}
+  }}
+}});
+
+async function initUi() {{
+  try {{
+    const ui = await fetchJson(UI_URL);
+    toggleTileNumbers.checked = Boolean(ui?.show_tile_numbers);
+  }} catch {{
+    toggleTileNumbers.checked = true;
+  }}
+}}
+
+initUi();
 tick();
 setInterval(tick, 200);
 </script>

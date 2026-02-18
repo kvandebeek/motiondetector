@@ -1,4 +1,18 @@
-# main.py
+"""Application composition root for the motion detector runtime.
+
+This module wires together all subsystems:
+- Windows DPI setup
+- Config loading
+- Shared state store
+- FastAPI server thread
+- Capture + monitor loop thread
+- Qt overlay selector UI
+- Optional synthetic test-data window
+
+The goal is to keep cross-component lifecycle management in one place so the rest of
+the codebase can remain focused on single responsibilities.
+"""
+
 from __future__ import annotations
 
 import argparse

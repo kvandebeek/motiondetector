@@ -1,4 +1,10 @@
-# config/config.py
+"""Configuration schema and JSON validation helpers.
+
+`load_config` validates and normalizes runtime settings from `config/config.json`
+into an immutable `AppConfig`, so downstream modules can assume a coherent shape and
+focus on behavior instead of defensive parsing.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

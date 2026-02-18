@@ -1,4 +1,10 @@
-# analyzer/capture.py
+"""Screen-capture abstractions and region utilities.
+
+The code currently targets MSS while keeping backend handling explicit and typed. It
+also centralizes virtual-desktop coordinate handling to reduce mixed-DPI/multi-monitor
+surprises across the rest of the pipeline.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

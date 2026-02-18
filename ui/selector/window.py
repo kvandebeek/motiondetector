@@ -1,4 +1,10 @@
-# ui/selector_window.py  (further-split version; relies on the modules above)
+"""Top-level Qt overlay window for region selection and tile interaction.
+
+`SelectorWindow` composes specialized UI helpers (grid geometry, painting, interaction,
+region emission, and server sync pollers) so user-facing behavior stays cohesive while
+implementation details remain modular.
+"""
+
 from __future__ import annotations
 
 from typing import Callable, Optional

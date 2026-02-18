@@ -1,4 +1,10 @@
-# server/server.py
+"""FastAPI application assembly and server-thread launcher.
+
+This module exposes the runtime API consumed by both the browser dashboard and the
+Qt overlay client. Endpoints are intentionally thin and delegate state ownership to
+`StatusStore` so HTTP concerns remain separate from detection logic.
+"""
+
 from __future__ import annotations
 
 import threading

@@ -54,7 +54,7 @@ def create_app(store: StatusStore) -> FastAPI:
         The HTML is mostly static, but we inject small runtime configuration values
         (e.g., history window) via a simple placeholder replacement.
         """
-        return HTMLResponse(get_index_html(history_seconds=120))
+        return HTMLResponse(get_index_html(history_seconds=int(store.get_history_seconds())))
 
     @app.get("/ui")
     async def get_ui() -> JSONResponse:

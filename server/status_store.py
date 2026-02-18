@@ -1,4 +1,10 @@
-# server/status_store.py
+"""Thread-safe in-memory state store shared by analyzer, UI, and HTTP routes.
+
+The store is intentionally the single source of truth for runtime status payloads,
+rolling history, UI toggles, and disabled tile indices. Keeping this logic centralized
+reduces cross-thread coupling and makes server routes thin/deterministic.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

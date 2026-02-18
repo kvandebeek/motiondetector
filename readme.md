@@ -7,6 +7,12 @@ Optional: record short clips based on motion state.
 
 ---
 
+## Documentation
+
+- Architecture review: `docs/architecture.md`
+- Developer guide: `docs/developer-guide.md`
+- Product backlog and stories: `docs/backlog.md`, `docs/user-stories.md`
+
 ## Features
 
 ### Region selection overlay (Windows, always-on-top)
@@ -39,6 +45,12 @@ Optional: record short clips based on motion state.
 ---
 
 ## How it works
+
+### Runtime architecture (quick view)
+- **Main thread**: Qt overlay window and interaction.
+- **Monitor thread**: capture + analysis loop publishing payloads.
+- **Server thread**: FastAPI endpoints + dashboard assets.
+- **Shared boundary**: `StatusStore` is the synchronized source of truth.
 
 1) **DPI awareness (Windows)**  
 The app sets process DPI awareness so the region you see matches physical pixels used by screen capture.

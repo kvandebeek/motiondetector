@@ -1,3 +1,10 @@
+"""Pure motion-state decision logic.
+
+The analyzer computes continuous metrics; this module converts them into coarse states
+(`NO_MOTION`, `LOW_ACTIVITY`, `MOTION`) plus a simple confidence value. Keeping the
+mapping as a pure function makes behavior easy to reason about and unit-test.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

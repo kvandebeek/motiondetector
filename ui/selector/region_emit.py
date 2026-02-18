@@ -105,6 +105,7 @@ class RegionEmitter:
         # A rough expectation check: logical DPI * DPR should be close to "effective" DPI.
         expected_from_qt = screen_logical * qt_dpr if screen_logical > 0 else -1.0
 
+        """
         print(
             "[dpi]",
             "reason=",
@@ -125,6 +126,7 @@ class RegionEmitter:
             round(expected_from_qt, 2),
             flush=True,
         )
+        """
 
     def emit(self, *, reason: str) -> None:
         """

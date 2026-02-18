@@ -1,4 +1,4 @@
-# ui/selector_ui.py
+# ui/selector/ui_logic.py
 from __future__ import annotations
 
 import threading
@@ -9,8 +9,8 @@ from PySide6.QtWidgets import QApplication
 
 from analyzer.capture import Region
 from ui.selector.window import SelectorWindow
-from ui.tiles_sync import TilesSync, TilesSyncConfig
 from ui.selector.models import UiRegion
+from ui.tiles_sync import TilesSync, TilesSyncConfig
 
 
 def run_selector_ui(
@@ -29,39 +29,22 @@ def run_selector_ui(
     server_base_url_override: Optional[str] = None,
     tiles_poll_ms: int = 500,
     http_timeout_sec: float = 0.35,
+    on_window_ready: Optional[Callable[[QApplication, SelectorWindow], None]] = None,
 ) -> None:
     """
-    Start (or attach to) the Qt application and show the selector overlay window.
+    Start the selector overlay UI and block until the Qt event loop exits.
 
-    Responsibilities:
-    - Build the base server URLs the overlay uses to:
-      - fetch tile enable/disable state (GET /tiles)
-      - fetch UI settings (GET /ui) such as show_tile_numbers
-    - Construct a TilesSync instance to keep UI tile state in sync with the server.
-    - Create and show SelectorWindow configured with grid/border/inset settings.
-    - Poll a cross-thread quit_flag and close the overlay cleanly when requested.
-
-    Threading model:
-    - This function should be called from the UI thread.
-    - quit_flag is set by another thread (e.g., main/monitor thread) to request shutdown.
-
-    Notes:
-    - server_base_url_override is required here because the selector window is designed to be
-      remotely driven/configured via the HTTP server endpoints.
+    on_window_ready (optional):
+      Called after the SelectorWindow is created and shown.
+      This is used to attach extra windows (e.g. --testdata) without refactoring the UI loop.
     """
-    # Normalize base URL once; keep it stable (no trailing slash) for simple concatenation.
     base = (server_base_url_override or "").strip().rstrip("/")
     if not base:
-        # The UI relies on the server to retrieve tiles/UI state; fail fast with a clear error.
         raise ValueError("server_base_url_override must be provided (e.g. http://127.0.0.1:8735)")
 
-    # Endpoint for tile sync (expected to reflect current grid_rows/grid_cols configuration).
     tiles_url = f"{base}/tiles"
+    ui_settings_url = f"{base}/ui"
 
-    # Endpoint for UI-specific settings (e.g. toggling tile number labels via server state).
-    ui_settings_url = f"{base}/ui"  # JSON: {"show_tile_numbers": ...}
-
-    # TilesSync periodically polls the server and exposes tile state to the window.
     tiles_sync = TilesSync(
         TilesSyncConfig(
             tiles_url=tiles_url,
@@ -71,11 +54,8 @@ def run_selector_ui(
         )
     )
 
-    # If a QApplication already exists (common in embedded/hosted contexts), reuse it.
-    # Otherwise, create a new one.
     app = QApplication.instance() or QApplication([])
 
-    # Create the overlay window with all relevant UI/capture geometry parameters.
     w = SelectorWindow(
         initial=initial,
         border_px=int(border_px),
@@ -96,11 +76,12 @@ def run_selector_ui(
     )
     w.show()
 
-    # Quit polling:
-    # We use a QTimer to periodically check the threading.Event without blocking the UI loop.
-    # When set, we close the window and quit the Qt application.
+    # Allow callers (main.py) to attach additional windows once the overlay exists.
+    if on_window_ready is not None:
+        on_window_ready(app, w)
+
     quit_timer = QTimer()
-    quit_timer.setInterval(200)
+    quit_timer.setInterval(1000/25)
 
     def on_quit_tick() -> None:
         if quit_flag.is_set():
@@ -108,9 +89,7 @@ def run_selector_ui(
             w.close()
             app.quit()
 
-    # Qt signal signature expects a callable; typing stubs sometimes mismatch, hence ignore.
     quit_timer.timeout.connect(on_quit_tick)  # type: ignore[arg-type]
     quit_timer.start()
 
-    # Start the Qt event loop. This returns when app.quit() is called.
     app.exec()

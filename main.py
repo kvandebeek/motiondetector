@@ -1,9 +1,11 @@
 # main.py
 from __future__ import annotations
 
+import argparse
 from dataclasses import dataclass
 import threading
 import traceback
+from typing import Any
 
 from analyzer.capture import Region, ScreenCapturer
 from analyzer.monitor_loop import DetectionParams, MonitorLoop
@@ -13,6 +15,12 @@ from server.server import run_server_in_thread
 from server.status_store import StatusStore
 from ui.selector.ui_logic import run_selector_ui
 from ui.selector.models import UiRegion
+
+# Testdata mode (new modules you’ll add)
+from testdata.engine import TestDataEngine
+from testdata.settings import TestDataSettings
+from ui.testdata_window import TestDataWindow, TestDataWindowConfig
+from ui.window_coupler import WindowCoupler
 
 
 @dataclass
@@ -25,8 +33,19 @@ class SharedRegion:
     - The monitor loop thread reads the selection to capture and analyze the correct screen area.
     - A lock is required because reads/writes happen concurrently.
     """
+
     lock: threading.Lock
     region: Region
+
+
+def _parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(prog="motiondetector")
+    g = p.add_mutually_exclusive_group()
+    g.add_argument("--testdata", action="store_true", help="Run testdata trainer (default profile).")
+    g.add_argument("--testdata-fast", action="store_true", help="Run testdata trainer (fast profile).")
+    g.add_argument("--testdata-slow", action="store_true", help="Run testdata trainer (slow profile).")
+    p.add_argument("--testdata-seed", type=int, default=1337, help="Seed for deterministic testdata runs.")
+    return p.parse_args()
 
 
 def main() -> int:
@@ -39,8 +58,11 @@ def main() -> int:
     - Start the HTTP server that exposes status and accepts UI/tile settings.
     - Start the monitor loop thread (continuous capture + motion detection).
     - Run the selector UI (Qt event loop) in the main thread.
+    - Optionally run a synthetic testdata window aligned to the overlay and coupled to it.
     - Coordinate shutdown across server/UI/monitor threads via a shared quit flag.
     """
+    args = _parse_args()
+
     # Important on Windows: makes per-window DPI queries and MSS coordinates consistent
     # (so capture regions align with what the user sees).
     set_process_dpi_awareness()
@@ -83,6 +105,13 @@ def main() -> int:
     # - main uses it to stop the loop after UI returns
     quit_flag = threading.Event()
 
+    # Keep strong refs so Qt objects don’t get garbage-collected.
+    # This matters for:
+    # - TestDataWindow (Qt widget)
+    # - WindowCoupler (QObject event filter)
+    # - Engine (stateful scene generator)
+    test_refs: dict[str, Any] = {}
+
     def on_close() -> None:
         """
         UI close callback.
@@ -90,12 +119,20 @@ def main() -> int:
         Responsibilities:
         - Signal the application should stop (quit_flag).
         - Inform the server/store so /quit state is consistent and quit watcher reacts.
+        - Close testdata window if present.
         """
         quit_flag.set()
         try:
             store.request_quit()
         except Exception:
             traceback.print_exc()
+
+        try:
+            w = test_refs.get("test_window")
+            if isinstance(w, TestDataWindow):
+                w.close()
+        except Exception:
+            pass
 
     def on_region_change(r: Region) -> None:
         """
@@ -120,6 +157,7 @@ def main() -> int:
     capturer = ScreenCapturer(cfg.capture_backend)
 
     # Detection and recording parameters used by MonitorLoop.
+    # Keep backwards compatibility for optional config knobs by using getattr defaults.
     params = DetectionParams(
         fps=float(cfg.fps),
         diff_gain=float(cfg.diff_gain),
@@ -135,7 +173,6 @@ def main() -> int:
         record_clip_seconds=int(cfg.recording_clip_seconds),
         record_cooldown_seconds=int(cfg.recording_cooldown_seconds),
         record_assets_dir=str(cfg.recording_assets_dir),
-        # Optional config knobs with safe defaults for older configs.
         record_stop_grace_seconds=int(getattr(cfg, "record_stop_grace_seconds", 10)),
         analysis_inset_px=int(getattr(cfg, "analysis_inset_px", 0)),
     )
@@ -183,6 +220,42 @@ def main() -> int:
 
     threading.Thread(target=quit_watcher, name="quit-watcher", daemon=True).start()
 
+    def on_window_ready(app, selector_window) -> None:
+        profile = "default"
+        if bool(args.testdata_fast):
+            profile = "fast"
+        elif bool(args.testdata_slow):
+            profile = "slow"
+        elif bool(args.testdata):
+            profile = "default"
+        else:
+            return
+
+        td_settings = TestDataSettings.from_config(cfg)
+        engine = TestDataEngine(settings=td_settings, seed=int(args.testdata_seed), profile_name=profile)
+
+        test_window = TestDataWindow(
+            engine=engine,
+            cfg=TestDataWindowConfig(
+                fps=float(cfg.fps),
+                show_overlay_text=True,
+                server_base_url=server_base_url,
+                profile_name=profile,
+                status_poll_ms=200 if profile == "fast" else 250 if profile == "default" else 400,
+                log_dir="./testdata_logs",
+                log_every_n_frames=1 if profile != "fast" else 2,
+            ),
+        )
+        test_window.setGeometry(selector_window.geometry())
+        test_window.show()
+
+        coupler = WindowCoupler(a=selector_window, b=test_window)
+
+        test_refs["engine"] = engine
+        test_refs["test_window"] = test_window
+        test_refs["coupler"] = coupler
+
+
     # Run selector UI (Qt event loop).
     # This call blocks until the window closes / app quits.
     run_selector_ui(
@@ -200,13 +273,14 @@ def main() -> int:
         grid_rows=int(cfg.grid_rows),
         grid_cols=int(cfg.grid_cols),
         # emit_inset_px controls what part of the overlay is emitted as the capture region.
-        # Here it's aligned with analysis_inset_px (inset inside the selected region).
+        # Here it’s aligned with analysis_inset_px (inset inside the selected region).
         emit_inset_px=int(getattr(cfg, "analysis_inset_px", 0)),
         tile_label_text_color="#FFFFFF",
         show_tile_numbers=True,
         server_base_url_override=server_base_url,
         tiles_poll_ms=500,
         http_timeout_sec=0.35,
+        on_window_ready=on_window_ready,
     )
 
     # UI returned: ensure shutdown is requested and monitor loop is stopped.

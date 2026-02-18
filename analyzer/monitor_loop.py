@@ -14,6 +14,7 @@ Output JSON (relevant-only)
 - capture: { state, reason, backend }
 - video: {
     state, confidence, motion_mean,
+    motion_instant_mean, motion_instant_top1, motion_instant_activity,
     grid: { rows, cols },
     tiles: [float | null, ...] (row-major),
     disabled_tiles: [int, ...] (0-based indices),
@@ -110,12 +111,6 @@ def _clamp01(x: float) -> float:
 def _edges(size: int, parts: int) -> List[int]:
     """
     Build monotonically non-decreasing edge indices that partition `size` into `parts`.
-
-    Why this exists:
-    - When size is not divisible by parts, naive integer division creates uneven coverage
-      and can leave off-by-one gaps/overlaps.
-    - We use rounding of proportional positions to distribute remainder more evenly.
-    - The monotonic fix-up avoids pathological rounding where edges go backwards.
     """
     if size < 0:
         raise ValueError("size must be >= 0")
@@ -138,9 +133,6 @@ def _tile_means(diff_u8: np.ndarray, *, rows: int, cols: int) -> List[float]:
 
     Output ordering:
     - Row-major (r0c0, r0c1, ..., r1c0, ...)
-
-    Behavior:
-    - Empty tiles (possible if edges collapse due to extreme sizing) return 0.0.
     """
     if rows <= 0 or cols <= 0:
         raise ValueError("grid_rows and grid_cols must be > 0")
@@ -156,19 +148,13 @@ def _tile_means(diff_u8: np.ndarray, *, rows: int, cols: int) -> List[float]:
         for c in range(cols):
             x0 = x_edges[c]
             x1 = x_edges[c + 1]
-
             tile = diff_u8[y0:y1, x0:x1]
             out.append(float(tile.mean() / 255.0) if tile.size else 0.0)
     return out
 
 
 def _topk_mean(values: List[float], k: int) -> float:
-    """
-    Average of the k largest values.
-
-    Used to capture “localized spikes” (e.g., motion in one tile) that might be diluted
-    in the global mean.
-    """
+    """Average of the k largest values."""
     if not values:
         return 0.0
     kk = max(1, min(int(k), len(values)))
@@ -179,15 +165,6 @@ def _topk_mean(values: List[float], k: int) -> float:
 def _detect_dead_top_rows(diff_u8: np.ndarray, *, rows: int, max_rows: int = 5) -> Tuple[int, float, float, float]:
     """
     Heuristic to detect “dead” (all-zero) horizontal bands at the top of the diff image.
-
-    Motivation:
-    - Some capture scenarios can introduce an always-zero strip (e.g., stale/blank pixels),
-      which can distort tile statistics.
-    - If the first N bands are consistently 0.0 mean, we crop them away before computing tiles.
-
-    Returns:
-    - dead: number of leading bands with mean == 0.0 (limited by max_rows and rows-1)
-    - b1/b2/b3: mean values of first three bands (debug/telemetry potential)
     """
     h = int(diff_u8.shape[0])
     tile_h = max(1, h // max(rows, 1))
@@ -217,18 +194,6 @@ def _detect_dead_top_rows(diff_u8: np.ndarray, *, rows: int, max_rows: int = 5) 
 def _apply_inset(gray: np.ndarray, inset_px: int) -> Tuple[np.ndarray, Dict[str, int]]:
     """
     Crop an inset ROI from a grayscale image.
-
-    Why:
-    - Borders of windows/overlays often contain high-contrast edges that flicker (anti-aliasing,
-      subpixel snapping) and cause false positives.
-    - Removing `inset_px` pixels from each side reduces noise.
-
-    Returns:
-    - roi: the (possibly) cropped array view
-    - rect: metadata describing ROI within the original image (x,y,width,height)
-
-    Safety:
-    - If inset removes the entire image, we return the original image to avoid invalid shapes.
     """
     inset = max(0, int(inset_px))
     h, w = gray.shape
@@ -248,6 +213,41 @@ def _apply_inset(gray: np.ndarray, inset_px: int) -> Tuple[np.ndarray, Dict[str,
     return roi, {"x": int(x0), "y": int(y0), "width": int(x1 - x0), "height": int(y1 - y0)}
 
 
+def _confidence_from_thresholds(*, ema_activity: float, no_thr: float, low_thr: float) -> float:
+    """
+    A simple, monotonic confidence estimate in [0..1] based on distance from thresholds.
+
+    Interpretation:
+    - NO_MOTION: confidence grows as ema goes further below no_thr
+    - LOW_ACTIVITY: confidence grows as ema sits further away from either boundary
+    - MOTION: confidence grows as ema goes further above low_thr
+    """
+    e = float(ema_activity)
+    no_t = float(no_thr)
+    low_t = float(low_thr)
+
+    if no_t <= 0.0:
+        return 0.0
+    if low_t <= no_t:
+        return 0.0
+
+    if e < no_t:
+        # 1.0 at 0, 0.0 at no_thr
+        return _clamp01((no_t - e) / no_t)
+
+    if e < low_t:
+        # Peak in the middle of the band, 0.0 at boundaries
+        mid = 0.5 * (no_t + low_t)
+        half = 0.5 * (low_t - no_t)
+        if half <= 0.0:
+            return 0.0
+        return _clamp01(1.0 - (abs(e - mid) / half))
+
+    # MOTION: ramp from low_thr upward
+    denom = max(1e-9, 1.0 - low_t)
+    return _clamp01((e - low_t) / denom)
+
+
 class MonitorLoop:
     """
     Background worker that:
@@ -255,10 +255,6 @@ class MonitorLoop:
     2) Computes diff-based motion metrics (per-tile + aggregate)
     3) Updates StatusStore with a JSON-friendly payload
     4) Feeds ClipRecorder when recording is enabled
-
-    Threading model:
-    - `start()` spawns a daemon thread that runs until `stop()` is requested.
-    - All state needed for motion detection (_prev_gray, EMA) is confined to that thread.
     """
 
     def __init__(
@@ -269,24 +265,19 @@ class MonitorLoop:
         params: DetectionParams,
         get_region: Callable[[], Region],
     ) -> None:
-        # External collaborators.
         self._store = store
         self._capturer = capturer
         self._params = params
         self._get_region = get_region
 
-        # Thread controls.
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
 
-        # Motion state (owned by the monitor thread).
         self._prev_gray: Optional[np.ndarray] = None
         self._ema_activity: float = 0.0
         self._last_update_ts: float = 0.0
         self._prev_state: str = "ERROR"
 
-        # Recording is always constructed; `enabled` controls actual writes.
-        # This keeps runtime logic simple and ensures directory creation happens once.
         self._recorder = ClipRecorder(
             RecorderConfig(
                 enabled=bool(params.record_enabled),
@@ -300,12 +291,6 @@ class MonitorLoop:
         )
 
     def start(self) -> None:
-        """
-        Start the monitor thread if it is not already running.
-
-        Idempotent:
-        - Multiple calls are safe; if the thread is alive we do nothing.
-        """
         if self._thread is not None and self._thread.is_alive():
             return
         self._stop.clear()
@@ -313,30 +298,19 @@ class MonitorLoop:
         self._thread.start()
 
     def stop(self) -> None:
-        """Signal the thread to stop (non-blocking)."""
         self._stop.set()
 
     def join(self, timeout: float) -> None:
-        """Join the thread for up to `timeout` seconds."""
         if self._thread is not None:
             self._thread.join(timeout=timeout)
 
     def _run(self) -> None:
-        """
-        Main loop.
-
-        Timing:
-        - Attempts to maintain `params.fps` cadence by subtracting processing time from the period.
-        - Uses Event.wait(timeout=...) so stop requests interrupt sleep promptly.
-        """
         period = 1.0 / max(float(self._params.fps), 1.0)
-
         try:
             while not self._stop.is_set():
                 t0 = time.time()
                 region = self._get_region()
 
-                # Capture failures should not crash the loop; publish an error payload and retry.
                 try:
                     frame = self._capturer.grab(region)
                 except Exception as e:
@@ -344,7 +318,6 @@ class MonitorLoop:
                     self._stop.wait(timeout=0.05)
                     continue
 
-                # Processing failures should also be isolated. The loop continues with the next frame.
                 try:
                     payload = self._process_frame(frame=frame, ts=t0, region=region)
                     self._store.set_latest(payload)
@@ -356,29 +329,16 @@ class MonitorLoop:
                 if sleep_for > 0:
                     self._stop.wait(timeout=sleep_for)
         finally:
-            # Always attempt a clean shutdown of optional resources.
-            # Failures here should not propagate.
             try:
                 self._recorder.stop()
             except Exception:
                 pass
             try:
-                # Optional API: some capturers keep thread-local handles that should be released.
                 self._capturer.close_thread_resources()
             except Exception:
                 pass
 
     def _get_disabled_tiles(self, *, n_tiles: int) -> List[int]:
-        """
-        Retrieve disabled tiles from StatusStore if that feature exists.
-
-        Rationale:
-        - UI/clients may toggle tiles off (masking out areas that are noisy or irrelevant).
-        - The store owns that user-driven state; the monitor loop consumes it.
-
-        Defensive behavior:
-        - If the store doesn't implement the hook or returns invalid data, we treat as no disabled tiles.
-        """
         getter = getattr(self._store, "get_disabled_tiles", None)
         if not callable(getter):
             return []
@@ -395,39 +355,23 @@ class MonitorLoop:
         return sorted(set(out))
 
     def _process_frame(self, *, frame: np.ndarray, ts: float, region: Region) -> Dict:
-        """
-        Convert a captured frame into a JSON payload.
-
-        Pipeline:
-        1) Convert to grayscale
-        2) Apply inset crop to reduce border noise
-        3) Warm-up: if no previous frame, publish a “warming_up” payload
-        4) Compute absolute diff vs previous frame
-        5) Optional dead-row cropping heuristic
-        6) Compute per-tile means and normalized activity
-        7) Apply tile masking (disabled tiles => None in JSON)
-        8) Update EMA and classify into a discrete state
-        9) Optionally feed the recorder
-        """
         gray_full = _to_gray_u8(frame)
 
         rows = int(self._params.grid_rows)
         cols = int(self._params.grid_cols)
         n_tiles = rows * cols
 
-        # Inset is applied before diffing and tiling so the entire metric stream is consistent.
         gray, _inset_rect = _apply_inset(gray_full, int(getattr(self._params, "analysis_inset_px", 10)))
 
         disabled_tiles = self._get_disabled_tiles(n_tiles=n_tiles)
         disabled_set: Set[int] = set(disabled_tiles)
 
-        # Warm-up state: no diff can be computed yet, or the region size changed (e.g., user resized overlay).
         if self._prev_gray is None or self._prev_gray.shape != gray.shape:
             self._prev_gray = gray
             self._last_update_ts = ts
             self._prev_state = "ERROR"
+            self._ema_activity = 0.0
 
-            # Emit tiles as 0.0 for enabled and None for disabled so the client can render immediately.
             tiles_init: List[Optional[float]] = [0.0] * n_tiles
             for i in disabled_set:
                 tiles_init[i] = None
@@ -438,6 +382,9 @@ class MonitorLoop:
                 video_state="ERROR",
                 confidence=0.0,
                 motion_mean=0.0,
+                motion_instant_mean=0.0,
+                motion_instant_top1=0.0,
+                motion_instant_activity=0.0,
                 tiles=tiles_init,
                 disabled_tiles=disabled_tiles,
                 rows=rows,
@@ -449,13 +396,10 @@ class MonitorLoop:
                 stale_age_sec=0.0,
             )
 
-        # Absolute per-pixel difference between consecutive frames.
-        # int16 avoids underflow during subtraction; convert back to u8 for compact stats.
         diff = np.abs(gray.astype(np.int16) - self._prev_gray.astype(np.int16)).astype(np.uint8)
         self._prev_gray = gray
         self._last_update_ts = ts
 
-        # Detect and crop away dead top bands if present to prevent skewing tile stats.
         dead_rows, _b1, _b2, _b3 = _detect_dead_top_rows(diff, rows=rows, max_rows=5)
 
         if dead_rows > 0:
@@ -465,14 +409,11 @@ class MonitorLoop:
         else:
             diff_roi = diff
 
-        # Per-tile metrics come from ROI, but the grid dimensions remain the configured rows/cols.
         tiles_raw = _tile_means(diff_roi, rows=rows, cols=cols)
 
-        # Global mean motion, scaled by diff_gain and capped at 1.0 before normalization.
         mean_raw = float(diff_roi.mean() / 255.0)
         mean_raw = float(min(1.0, mean_raw * float(self._params.diff_gain)))
 
-        # Validate normalization parameters (configuration errors should be surfaced clearly).
         mean_full = float(self._params.mean_full_scale)
         tile_full = float(self._params.tile_full_scale)
         if mean_full <= 0.0:
@@ -480,36 +421,30 @@ class MonitorLoop:
         if tile_full <= 0.0:
             raise ValueError("tile_full_scale must be > 0")
 
-        # Normalize into [0..1] using linear “full scale” targets.
         mean_norm_unmasked = _clamp01(mean_raw / mean_full)
         tiles_norm_full: List[float] = [_clamp01(t / tile_full) for t in tiles_raw]
 
-        # Apply tile masking for the state decision.
         enabled_tiles_norm: List[float] = [v for i, v in enumerate(tiles_norm_full) if i not in disabled_set]
         enabled_count = len(enabled_tiles_norm)
-
         all_tiles_disabled = enabled_count == 0
 
         if all_tiles_disabled:
-            # With no active tiles, motion classification is meaningless; report a stable state.
             self._ema_activity = 0.0
             video_state = "ALL_TILES_DISABLED"
             confidence = 0.0
             overall_state = "OK"
             overall_reasons: List[str] = ["all_tiles_disabled"]
+            motion_instant_mean = 0.0
+            motion_instant_top1 = 0.0
+            motion_instant_activity = 0.0
         else:
-            # Aggregate activity:
-            # - mean over enabled tiles captures distributed motion
-            # - top-k captures localized motion (k=1 is “hottest tile”)
-            mean_norm = float(sum(enabled_tiles_norm) / float(enabled_count))
-            topk_mean = _topk_mean(enabled_tiles_norm, 1)
-            activity = max(mean_norm, topk_mean)
+            motion_instant_mean = float(sum(enabled_tiles_norm) / float(enabled_count))
+            motion_instant_top1 = _topk_mean(enabled_tiles_norm, 1)
+            motion_instant_activity = motion_instant_activity = _topk_mean(enabled_tiles_norm, k=3)
 
-            # EMA smoothing reduces flicker and helps thresholds behave consistently.
             a = float(self._params.ema_alpha)
-            self._ema_activity = (a * activity) + ((1.0 - a) * self._ema_activity)
+            self._ema_activity = (a * motion_instant_activity) + ((1.0 - a) * self._ema_activity)
 
-            # Convert smoothed activity into discrete states.
             if self._ema_activity < float(self._params.no_motion_threshold):
                 video_state = "NO_MOTION"
             elif self._ema_activity < float(self._params.low_activity_threshold):
@@ -517,14 +452,15 @@ class MonitorLoop:
             else:
                 video_state = "MOTION"
 
-            confidence = _clamp01(self._ema_activity)
+            confidence = _confidence_from_thresholds(
+                ema_activity=self._ema_activity,
+                no_thr=float(self._params.no_motion_threshold),
+                low_thr=float(self._params.low_activity_threshold),
+            )
 
-            # Overall status is a higher-level “OK/NOT_OK” signal for simple consumers.
-            # Current rule: only MOTION is OK, otherwise NOT_OK.
             overall_state = "OK" if video_state == "MOTION" else "NOT_OK"
             overall_reasons = [] if video_state == "MOTION" else ["no_motion_enabled_tiles"]
 
-        # JSON tiles are always full grid length; disabled tiles become null.
         tiles_for_json: List[Optional[float]] = [float(v) for v in tiles_norm_full]
         for i in disabled_set:
             tiles_for_json[i] = None
@@ -535,6 +471,9 @@ class MonitorLoop:
             video_state=video_state,
             confidence=confidence,
             motion_mean=float(self._ema_activity),
+            motion_instant_mean=float(motion_instant_mean),
+            motion_instant_top1=float(motion_instant_top1),
+            motion_instant_activity=float(motion_instant_activity),
             tiles=tiles_for_json,
             disabled_tiles=disabled_tiles,
             rows=rows,
@@ -546,12 +485,12 @@ class MonitorLoop:
             stale_age_sec=0.0,
         )
 
-        # Recording is only meaningful when there is at least one enabled tile and we have a “real” state.
         if not all_tiles_disabled:
             frame_bgr = _bgra_to_bgr(frame)
             self._recorder.update(now_ts=ts, state=video_state, frame_bgr=frame_bgr)
 
         self._prev_state = video_state
+        _ = mean_norm_unmasked  # retained for future telemetry if needed
         return payload
 
     @staticmethod
@@ -562,6 +501,9 @@ class MonitorLoop:
         video_state: str,
         confidence: float,
         motion_mean: float,
+        motion_instant_mean: float,
+        motion_instant_top1: float,
+        motion_instant_activity: float,
         tiles: List[Optional[float]],
         disabled_tiles: List[int],
         rows: int,
@@ -572,14 +514,6 @@ class MonitorLoop:
         stale: bool,
         stale_age_sec: float,
     ) -> Dict:
-        """
-        Build the canonical JSON payload.
-
-        Notes:
-        - `tiles` may contain None for disabled tiles; we normalize floats for JSON stability.
-        - `capture.backend` is hardcoded to "MSS" because ScreenCapturer currently only supports MSS.
-          If you add more backends, thread this through from ScreenCapturer/params.
-        """
         tiles_list: List[Optional[float]] = [float(x) if x is not None else None for x in tiles]
 
         return {
@@ -589,6 +523,9 @@ class MonitorLoop:
                 "state": str(video_state),
                 "confidence": float(confidence),
                 "motion_mean": float(motion_mean),
+                "motion_instant_mean": float(motion_instant_mean),
+                "motion_instant_top1": float(motion_instant_top1),
+                "motion_instant_activity": float(motion_instant_activity),
                 "grid": {"rows": int(rows), "cols": int(cols)},
                 "tiles": tiles_list,
                 "disabled_tiles": [int(i) for i in disabled_tiles],
@@ -602,14 +539,6 @@ class MonitorLoop:
 
     @staticmethod
     def _error_payload(*, reason: str, region: Region) -> Dict:
-        """
-        Build an error payload (capture or processing failure).
-
-        Conventions:
-        - `capture.state` is ERROR with a human-readable reason.
-        - `video.stale` is True (data cannot be trusted).
-        - `overall.state` is NOT_OK.
-        """
         now = time.time()
         return {
             "timestamp": float(now),
@@ -618,6 +547,9 @@ class MonitorLoop:
                 "state": "ERROR",
                 "confidence": 0.0,
                 "motion_mean": 0.0,
+                "motion_instant_mean": 0.0,
+                "motion_instant_top1": 0.0,
+                "motion_instant_activity": 0.0,
                 "grid": {"rows": 0, "cols": 0},
                 "tiles": [],
                 "disabled_tiles": [],

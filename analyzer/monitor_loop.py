@@ -78,6 +78,7 @@ class DetectionParams:
     audio_enabled: bool = True
     audio_backend: str = "pyaudiowpatch"
     audio_device_substr: str = ""
+    audio_device_index: Optional[int] = None
     audio_samplerate: int = 48_000
     audio_channels: int = 2
     audio_block_ms: int = 250
@@ -305,7 +306,14 @@ class MonitorLoop:
                 stop_grace_seconds=int(getattr(params, "record_stop_grace_seconds", 10)),
             )
         )
-        self._audio = AudioMeter()
+        self._audio = AudioMeter(
+            enabled=bool(params.audio_enabled),
+            device_substr=str(params.audio_device_substr),
+            device_index=params.audio_device_index,
+            samplerate=int(params.audio_samplerate),
+            channels=int(params.audio_channels),
+            block_ms=int(params.audio_block_ms),
+        )
 
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():

@@ -40,6 +40,7 @@ This document summarizes the current repository architecture after the latest ta
 
 ### Coordination primitives
 - `threading.Event` quit flag for process-level shutdown intent.
+- SIGINT (`Ctrl+C`) is bridged into the same quit flag so terminal shutdown and UI-close follow one path.
 - `StatusStore` lock protects shared mutable state.
 - callback-based region access (`get_region`) decouples monitor from UI objects.
 
@@ -110,7 +111,19 @@ UI code is cleanly split under `ui/selector/`:
 
 ---
 
-## 7) Configuration architecture
+## 7) Audio loopback architecture
+
+- Audio meter uses `pyaudiowpatch` loopback input capture.
+- Device selection supports explicit `audio.device_index` and fallback auto-select (`audio.device_substr`, then first loopback input).
+- Failures are surfaced in payload (`audio.available=false`, `audio.reason=capture_failed:*`) without crashing the monitor loop.
+
+### Assessment
+- ✅ Backend aligns with Windows loopback capture behavior and avoids SoundCard API incompatibilities.
+- ⚠️ Device numbering is machine-specific; production configs should pin `audio.device_index` where possible.
+
+---
+
+## 8) Configuration architecture
 
 - `config/config.py` validates and normalizes JSON into immutable `AppConfig`.
 - Required and optional sections are clearly separated.
@@ -121,7 +134,7 @@ UI code is cleanly split under `ui/selector/`:
 
 ---
 
-## 8) Priority recommendations
+## 9) Priority recommendations
 
 1. Add focused unit tests for:
    - `server/state_machine.py`
@@ -134,7 +147,7 @@ UI code is cleanly split under `ui/selector/`:
 
 ---
 
-## 9) Bottom line
+## 10) Bottom line
 
 The repository has a **solid, maintainable architecture** for a local desktop motion detector:
 - clear boundaries,

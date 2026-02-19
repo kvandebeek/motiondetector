@@ -1,6 +1,7 @@
 # ui/selector/ui_logic.py
 from __future__ import annotations
 
+import signal
 import threading
 from typing import Callable, Optional
 
@@ -80,6 +81,14 @@ def run_selector_ui(
     if on_window_ready is not None:
         on_window_ready(app, w)
 
+
+    prev_sigint = signal.getsignal(signal.SIGINT)
+
+    def _handle_sigint(_signum, _frame) -> None:
+        quit_flag.set()
+
+    signal.signal(signal.SIGINT, _handle_sigint)
+
     quit_timer = QTimer()
     quit_timer.setInterval(1000/25)
 
@@ -113,3 +122,5 @@ def run_selector_ui(
         except Exception:
             pass
         app.quit()
+    finally:
+        signal.signal(signal.SIGINT, prev_sigint)

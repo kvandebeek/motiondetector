@@ -78,7 +78,7 @@ Routes read/write server-side state and serve the UI.
 
 - Windows (intended target)
 - Python 3.x
-- Dependencies are pinned in `requirements.lock.txt` (PySide6, mss, numpy, fastapi, uvicorn, opencv-python, ...)
+- Dependencies are pinned in `requirements.lock.txt` (PySide6, mss, numpy, fastapi, uvicorn, opencv-python, pyaudiowpatch, ...)
 
 ---
 
@@ -118,6 +118,12 @@ Current config structure (high-level):
   - grid (`grid_rows`, `grid_cols`)
   - history retention (`history_seconds`)
 - `recording.*` (optional)
+- `audio.*` (optional loopback meter settings)
+  - `enabled` (default `true`)
+  - `backend` (`pyaudiowpatch`, `auto`, or `default`)
+  - `device_index` (`-1` for auto-select, or a concrete loopback input index)
+  - `device_substr` (optional substring match for auto-select)
+  - `samplerate`, `channels`, `block_ms`
 - `ui.*` (initial region + visuals + `show_tile_numbers`)
 
 Tip: keep `grid_rows`/`grid_cols` reasonable; very large grids increase CPU cost and UI clutter.
@@ -183,6 +189,16 @@ If the overlay and capture region ever drift out of alignment:
 The overlay expects a server base URL and polls `/tiles` and `/ui`. Ensure:
 - server is running
 - `server.host` is reachable from the UI (loopback is recommended)
+
+### Audio loopback capture unavailable
+If `/status` returns `"audio.available": false` with `capture_failed:*`:
+- install pinned dependencies again (`pip install -r requirements.lock.txt`)
+- set `audio.device_index` to a known working loopback input (for example 13/14)
+- optionally use `audio.device_substr` to target a specific output device name
+- validate the hardware path with:
+  - `python monitor_audio_output_loopback.py --device-index 13`
+
+Press `Ctrl+C` in that helper script (or in `python main.py`) to stop gracefully.
 
 ### High CPU
 - Lower `capture.fps`

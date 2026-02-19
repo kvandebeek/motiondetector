@@ -118,10 +118,6 @@ class SelectorInteractor:
         if self._chrome.close_rect(widget_w=self._w.width(), inner_top=inner_top).contains(pos):
             return "move"
 
-        # Top chrome area (above the grid/inner rect) is always used for moving.
-        if pos.y() < inner_top:
-            return "move"
-
         # Edge/corner hit-testing in widget-local coordinates.
         m = int(self._cfg.margin_px)
         x = pos.x()
@@ -153,6 +149,10 @@ class SelectorInteractor:
             return "t"
         if bottom:
             return "b"
+
+        # Top chrome area (above the grid/inner rect) but away from edge handles moves the window.
+        if pos.y() < inner_top:
+            return "move"
 
         # Inside: default behavior is "move" (but press logic may interpret as tile toggle).
         return "move"

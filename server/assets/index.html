@@ -13,47 +13,61 @@
     <div class="actions">
       <div class="toggle control-group" title="Grid size">
         <div class="rowline">
-          <span>Grid X</span>
-          <button id="gridColsMinus" class="btn-mini">−</button>
-          <input id="gridCols" type="number" min="1" style="width:68px" />
-          <button id="gridColsPlus" class="btn-mini">+</button>
-          <span>(columns)</span>
+          <div class="field field-with-hint">
+            <span class="label">Grid X</span>
+            <button id="gridColsMinus" class="btn-mini">−</button>
+            <input id="gridCols" type="number" min="1" />
+            <button id="gridColsPlus" class="btn-mini">+</button>
+            <span class="hint">(columns)</span>
+          </div>
         </div>
         <div class="rowline">
-          <span>Grid W</span>
-          <button id="gridRowsMinus" class="btn-mini">−</button>
-          <input id="gridRows" type="number" min="1" style="width:68px" />
-          <button id="gridRowsPlus" class="btn-mini">+</button>
-          <span>(rows)</span>
+          <div class="field field-with-hint">
+            <span class="label">Grid W</span>
+            <button id="gridRowsMinus" class="btn-mini">−</button>
+            <input id="gridRows" type="number" min="1" />
+            <button id="gridRowsPlus" class="btn-mini">+</button>
+            <span class="hint">(rows)</span>
+          </div>
         </div>
       </div>
 
       <div class="toggle control-group" title="Overlay position and size">
-        <div class="rowline">
-          <span>X</span>
-          <button id="regionXMinus" class="btn-mini">−</button>
-          <input id="regionX" type="number" style="width:76px" />
-          <button id="regionXPlus" class="btn-mini">+</button>
-
-          <span>Y</span>
-          <button id="regionYMinus" class="btn-mini">−</button>
-          <input id="regionY" type="number" style="width:76px" />
-          <button id="regionYPlus" class="btn-mini">+</button>
+        <div class="rowline rowline-dual">
+          <div class="field">
+            <span class="label">X</span>
+            <button id="regionXMinus" class="btn-mini">−</button>
+            <input id="regionX" type="number" />
+            <button id="regionXPlus" class="btn-mini">+</button>
+            <span class="hint">&nbsp;</span>
+          </div>
+          <div class="field">
+            <span class="label">Y</span>
+            <button id="regionYMinus" class="btn-mini">−</button>
+            <input id="regionY" type="number" />
+            <button id="regionYPlus" class="btn-mini">+</button>
+            <span class="hint">&nbsp;</span>
+          </div>
         </div>
-        <div class="rowline">
-          <span>W</span>
-          <button id="regionWMinus" class="btn-mini">−</button>
-          <input id="regionW" type="number" min="1" style="width:76px" />
-          <button id="regionWPlus" class="btn-mini">+</button>
-
-          <span>H</span>
-          <button id="regionHMinus" class="btn-mini">−</button>
-          <input id="regionH" type="number" min="1" style="width:76px" />
-          <button id="regionHPlus" class="btn-mini">+</button>
+        <div class="rowline rowline-dual">
+          <div class="field">
+            <span class="label">W</span>
+            <button id="regionWMinus" class="btn-mini">−</button>
+            <input id="regionW" type="number" min="1" />
+            <button id="regionWPlus" class="btn-mini">+</button>
+            <span class="hint">&nbsp;</span>
+          </div>
+          <div class="field">
+            <span class="label">H</span>
+            <button id="regionHMinus" class="btn-mini">−</button>
+            <input id="regionH" type="number" min="1" />
+            <button id="regionHPlus" class="btn-mini">+</button>
+            <span class="hint">&nbsp;</span>
+          </div>
         </div>
       </div>
 
-      <div class="toggle control-group" title="Overlay options">
+      <div class="toggle control-group toggle-group" title="Overlay options">
         <label class="inline-check"><input id="toggleTileNumbers" type="checkbox" /><span>Tile numbers</span></label>
         <label class="inline-check"><input id="toggleOverlayState" type="checkbox" /><span>Overlay state</span></label>
       </div>

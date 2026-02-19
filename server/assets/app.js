@@ -144,6 +144,28 @@ function applyUiValues(ui, { initOnly = false } = {}) {
   renderMonitorInfo(ui);
 }
 
+
+
+function setVideoStateTone(videoState, overallState) {
+  if (!pillVideo) return;
+  pillVideo.classList.remove('pill-state-ok', 'pill-state-warn', 'pill-state-alert');
+
+  const v = String(videoState || '').toUpperCase();
+  const o = String(overallState || '').toUpperCase();
+
+  if (v.includes('NO_MOTION') || v.includes('NO_AUDIO')) {
+    pillVideo.classList.add('pill-state-alert');
+    return;
+  }
+  if (v.includes('LOW_ACTIVITY')) {
+    pillVideo.classList.add('pill-state-warn');
+    return;
+  }
+  if (o === 'OK' || v.includes('MOTION_WITH_AUDIO') || v.includes('MOTION')) {
+    pillVideo.classList.add('pill-state-ok');
+  }
+}
+
 function renderStatus(payload) {
   tsLabel.textContent = fmtTime(payload.timestamp);
 
@@ -153,6 +175,7 @@ function renderStatus(payload) {
   const audioPeak = Math.max(n(payload?.audio?.left, 0), n(payload?.audio?.right, 0));
 
   pillVideo.textContent = `video: ${vState}`;
+  setVideoStateTone(vState, oState);
   pillMean.textContent = `motion_mean: ${mean.toFixed(4)}`;
   pillAudioPeak.textContent = `audio peak: ${audioPeak.toFixed(1)}`;
   pillOverall.textContent = `overall: ${oState}`;

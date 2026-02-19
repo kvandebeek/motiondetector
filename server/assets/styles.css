@@ -82,6 +82,8 @@ button:hover { border-color: rgba(255, 255, 255, 0.18); }
 }
 
 .dashboard-grid {
+  /* Keep columns symmetric so one canvas cannot force sibling panels off-screen. */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-template-areas:
     "json motion"
     "audio heatmap";
@@ -98,6 +100,7 @@ button:hover { border-color: rgba(255, 255, 255, 0.18); }
   border-radius: 14px;
   padding: 12px 12px 10px;
   overflow: hidden;
+  min-width: 0;
   min-height: 140px;
 }
 

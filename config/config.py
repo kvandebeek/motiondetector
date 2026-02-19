@@ -125,6 +125,7 @@ class AppConfig:
     border_px: int
     grid_line_px: int
     show_tile_numbers: bool
+    show_overlay_state: bool
 
 
 def _require_obj(raw: Dict[str, Any], key: str) -> Dict[str, Any]:
@@ -392,6 +393,7 @@ def load_config(path: str) -> AppConfig:
     border_px = int(_require_num(ui.get("border_px"), "ui.border_px"))
     grid_line_px = int(_require_num(ui.get("grid_line_px"), "ui.grid_line_px"))
     show_tile_numbers = _opt_bool(ui.get("show_tile_numbers"), "ui.show_tile_numbers", True)
+    show_overlay_state = _opt_bool(ui.get("show_overlay_state"), "ui.show_overlay_state", False)
 
     # Construct immutable config used throughout the application.
     return AppConfig(
@@ -434,6 +436,7 @@ def load_config(path: str) -> AppConfig:
         border_px=border_px,
         grid_line_px=grid_line_px,
         show_tile_numbers=show_tile_numbers,
+        show_overlay_state=show_overlay_state,
     )
 
 
@@ -443,6 +446,11 @@ def patch_runtime_ui_motion_config(
     show_tile_numbers: bool | None = None,
     grid_rows: int | None = None,
     grid_cols: int | None = None,
+    show_overlay_state: bool | None = None,
+    region_x: int | None = None,
+    region_y: int | None = None,
+    region_width: int | None = None,
+    region_height: int | None = None,
 ) -> None:
     """Persist runtime-updated UI/motion settings into config.json."""
     p = Path(path)
@@ -466,6 +474,22 @@ def patch_runtime_ui_motion_config(
         motion["grid_rows"] = max(1, int(grid_rows))
     if grid_cols is not None:
         motion["grid_cols"] = max(1, int(grid_cols))
+    if show_overlay_state is not None:
+        ui["show_overlay_state"] = bool(show_overlay_state)
+
+    initial_region = ui.get("initial_region")
+    if not isinstance(initial_region, dict):
+        initial_region = {}
+        ui["initial_region"] = initial_region
+
+    if region_x is not None:
+        initial_region["x"] = int(region_x)
+    if region_y is not None:
+        initial_region["y"] = int(region_y)
+    if region_width is not None:
+        initial_region["width"] = max(1, int(region_width))
+    if region_height is not None:
+        initial_region["height"] = max(1, int(region_height))
 
     with p.open("w", encoding="utf-8") as f:
         json.dump(raw, f, indent=2)

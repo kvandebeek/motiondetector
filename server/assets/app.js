@@ -5,6 +5,8 @@ import {
   UI_URL,
   TILE_NUMBERS_URL,
   GRID_URL,
+  REGION_URL,
+  STATE_OVERLAY_URL,
   TILES_GET_URL,
   TILES_PUT_URL,
   fetchJson,
@@ -15,9 +17,6 @@ import { fmtTime } from './utils.js';
 import { drawAudioChart, drawChart } from './chart.js';
 import { drawTilesHeatmap, getGridAndTiles, tileIndexFromCanvasClick } from './heatmap.js';
 
-// --- DOM wiring --------------------------------------------------------------
-// These elements are treated as required by the UI. If any are missing, the page will
-// likely fail early, which is fine for a tightly-coupled single-page dashboard.
 const jsonBox = document.getElementById('jsonBox');
 const tsLabel = document.getElementById('tsLabel');
 const pillVideo = document.getElementById('pillVideo');
@@ -28,256 +27,213 @@ const gridLabel = document.getElementById('gridLabel');
 const copyBtn = document.getElementById('copyJson');
 const quitBtn = document.getElementById('quitBtn');
 const toggleTileNumbers = document.getElementById('toggleTileNumbers');
+const toggleOverlayState = document.getElementById('toggleOverlayState');
 const gridRowsInput = document.getElementById('gridRows');
 const gridColsInput = document.getElementById('gridCols');
 const applyGridBtn = document.getElementById('applyGrid');
+const regionXInput = document.getElementById('regionX');
+const regionYInput = document.getElementById('regionY');
+const regionWInput = document.getElementById('regionW');
+const regionHInput = document.getElementById('regionH');
+const applyRegionBtn = document.getElementById('applyRegion');
+const nudgeUpBtn = document.getElementById('nudgeUp');
+const nudgeDownBtn = document.getElementById('nudgeDown');
+const nudgeLeftBtn = document.getElementById('nudgeLeft');
+const nudgeRightBtn = document.getElementById('nudgeRight');
 
 const chartCanvas = document.getElementById('chart');
 const audioChartCanvas = document.getElementById('audioChart');
 const heatCanvas = document.getElementById('tilesHeatmap');
 
-// --- Client-side state -------------------------------------------------------
-// Disabled tile mask comes from the server (/tiles) and is also embedded in /status.
 let disabledTiles = new Set();
-
-// UI toggle state mirroring: keep a local memory of the last server-known state so
-// we can revert on failures.
-let lastShowTileNumbers = true;
-
-// Guard to prevent programmatic checkbox changes from re-triggering the change handler.
 let suppressToggleHandler = false;
-
-// Last raw /status payload (used for interactions that must avoid display-only JSON transforms).
+let suppressOverlayToggleHandler = false;
+let lastShowTileNumbers = true;
+let lastShowOverlayState = false;
 let lastStatusPayload = null;
 
 function setToggleCheckedFromServer(value) {
-  // Normalize any “truthy”/“falsy” value into a strict boolean.
   const v = Boolean(value);
   lastShowTileNumbers = v;
-
-  // Defensive: if the toggle isn't present, nothing to sync.
-  if (!toggleTileNumbers) return;
-
-  // Avoid touching DOM if already in the desired state.
-  if (toggleTileNumbers.checked === v) return;
-
-  // When we update the checkbox programmatically, suppress the 'change' listener.
+  if (!toggleTileNumbers || toggleTileNumbers.checked === v) return;
   suppressToggleHandler = true;
   toggleTileNumbers.checked = v;
   suppressToggleHandler = false;
 }
 
-/**
- * Display-only transformation:
- * - Keep the backend payload intact for logic/heatmap calculations.
- * - Make the JSON viewer more readable by rendering disabled tiles as "disabled"
- *   instead of `null`.
- *
- * Note:
- * - The heatmap/logic uses the raw `payload` (not this transformed view) because
- *   it expects tiles to be numbers or nulls, not strings.
- */
+function setOverlayToggleCheckedFromServer(value) {
+  const v = Boolean(value);
+  lastShowOverlayState = v;
+  if (!toggleOverlayState || toggleOverlayState.checked === v) return;
+  suppressOverlayToggleHandler = true;
+  toggleOverlayState.checked = v;
+  suppressOverlayToggleHandler = false;
+}
+
 function statusForDisplay(payload) {
   const tiles = payload?.video?.tiles;
   if (!Array.isArray(tiles)) return payload;
+  return { ...payload, video: { ...payload.video, tiles: tiles.map((v) => (v === null ? 'disabled' : v)) } };
+}
 
-  return {
-    ...payload,
-    video: {
-      ...payload.video,
-      tiles: tiles.map((v) => (v === null ? 'disabled' : v)),
-    },
-  };
+function applyUiValues(ui) {
+  if (!ui || typeof ui !== 'object') return;
+  if (gridRowsInput && ui.grid_rows) gridRowsInput.value = String(ui.grid_rows);
+  if (gridColsInput && ui.grid_cols) gridColsInput.value = String(ui.grid_cols);
+  if (regionXInput && Number.isFinite(ui.region_x)) regionXInput.value = String(ui.region_x);
+  if (regionYInput && Number.isFinite(ui.region_y)) regionYInput.value = String(ui.region_y);
+  if (regionWInput && Number.isFinite(ui.region_width)) regionWInput.value = String(ui.region_width);
+  if (regionHInput && Number.isFinite(ui.region_height)) regionHInput.value = String(ui.region_height);
+  setToggleCheckedFromServer(ui.show_tile_numbers);
+  setOverlayToggleCheckedFromServer(ui.show_overlay_state);
 }
 
 function renderStatus(payload) {
-  // Timestamp label is a convenience; the canonical timestamp remains in the JSON.
   tsLabel.textContent = fmtTime(payload.timestamp);
-
-  // Resilient reads: payloads can be ERROR/warmup and omit parts of the structure.
   const vState = payload?.video?.state ?? '—';
   const mean = payload?.video?.motion_mean ?? 0;
   const oState = payload?.overall?.state ?? '—';
 
-  // “Pills” are quick-glance indicators.
   pillVideo.textContent = `video: ${vState}`;
   pillMean.textContent = `motion_mean: ${Number(mean).toFixed(4)}`;
   pillOverall.textContent = `overall: ${oState}`;
 
-  // JSON viewer: keep it human-readable (pretty printed).
   jsonBox.textContent = JSON.stringify(statusForDisplay(payload), null, 2);
   lastStatusPayload = payload;
 
-  // Disabled tiles are duplicated in /status for convenience; keep our Set in sync.
   const d = payload?.video?.disabled_tiles;
   if (Array.isArray(d)) disabledTiles = new Set(d);
-
-  // Single source of truth for the toggle is server-side UI state, embedded in /status.
-  setToggleCheckedFromServer(payload?.ui?.show_tile_numbers);
-  if (gridRowsInput && gridColsInput) {
-    if (payload?.ui?.grid_rows) gridRowsInput.value = String(payload.ui.grid_rows);
-    if (payload?.ui?.grid_cols) gridColsInput.value = String(payload.ui.grid_cols);
-  }
+  applyUiValues(payload?.ui);
 }
 
 async function loadTileMask() {
-  // Best-effort: UI can still function with an empty mask if this fails.
   try {
     const d = await fetchJson(TILES_GET_URL);
     const raw = d?.disabled_tiles;
     if (Array.isArray(raw)) disabledTiles = new Set(raw);
-  } catch {
-    // ignore
-  }
+  } catch {}
 }
 
 async function saveTileMask() {
-  // Persist as a sorted list to keep payloads deterministic and diff-friendly.
-  const list = Array.from(disabledTiles)
-    .filter((n) => Number.isInteger(n))
-    .sort((a, b) => a - b);
-
+  const list = Array.from(disabledTiles).filter(Number.isInteger).sort((a, b) => a - b);
   const res = await putJson(TILES_PUT_URL, { disabled_tiles: list });
-
-  // Server may validate/normalize; use its response as the new truth.
   const raw = res?.disabled_tiles;
   if (Array.isArray(raw)) disabledTiles = new Set(raw);
 }
 
-async function tick() {
-  // Polling loop:
-  // - /status drives the live values and the heatmap
-  // - /history drives the chart
-  // - /ui is a fallback source for UI-only state if /status fails
-  let status = null;
+async function pushRegionUpdate(x, y, widthOverride = null, heightOverride = null) {
+  const width = widthOverride ?? Number(regionWInput?.value || lastStatusPayload?.ui?.region_width || 0);
+  const height = heightOverride ?? Number(regionHInput?.value || lastStatusPayload?.ui?.region_height || 0);
+  if (!Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) return;
+  const ui = await postJson(REGION_URL, { x, y, width, height });
+  applyUiValues(ui);
+}
 
+async function tick() {
+  let status = null;
   try {
     status = await fetchJson(STATUS_URL);
     renderStatus(status);
-
-    // Heatmap draws the current per-tile values and overlay state (disabled tiles).
-    drawTilesHeatmap({
-      canvas: heatCanvas,
-      gridLabelEl: gridLabel,
-      payload: status,
-      disabledTilesSet: disabledTiles,
-    });
-  } catch {
-    // keep last render
-  }
+    drawTilesHeatmap({ canvas: heatCanvas, gridLabelEl: gridLabel, payload: status, disabledTilesSet: disabledTiles });
+  } catch {}
 
   try {
     const hist = await fetchJson(HISTORY_URL);
     drawChart(chartCanvas, hist.history || []);
     drawAudioChart(audioChartCanvas, hist.history || []);
   } catch {
-    // If history fails, show an empty chart rather than stale or broken visuals.
     drawChart(chartCanvas, []);
     drawAudioChart(audioChartCanvas, []);
   }
 
-  // If status fetch failed, keep the tile-number toggle reasonably in sync via /ui.
   if (!status) {
     try {
       const ui = await fetchJson(UI_URL);
-      setToggleCheckedFromServer(ui?.show_tile_numbers);
-    } catch {
-      // ignore
-    }
+      applyUiValues(ui);
+    } catch {}
   }
 }
 
-// --- UI events --------------------------------------------------------------
 copyBtn.addEventListener('click', async () => {
-  // Copy what the user currently sees. This includes the display transformation
-  // (disabled tiles as strings), which is intentional for readability.
-  try {
-    await navigator.clipboard.writeText(jsonBox.textContent || '{}');
-  } catch {}
+  try { await navigator.clipboard.writeText(jsonBox.textContent || '{}'); } catch {}
 });
 
 quitBtn.addEventListener('click', async () => {
-  // Best-effort quit request; UI doesn't need to block on this.
-  // (Uses raw fetch to keep the dependency surface small.)
-  try {
-    await fetch('/quit', { method: 'POST' });
-  } catch {}
+  try { await fetch('/quit', { method: 'POST' }); } catch {}
 });
 
 toggleTileNumbers.addEventListener('change', async () => {
-  // If we just updated the checkbox programmatically, do not send a server request.
   if (suppressToggleHandler) return;
-
   const desired = Boolean(toggleTileNumbers.checked);
-
-  // Optimistic UI:
-  // - Keep the checkbox state immediately responsive.
-  // - If the server rejects, revert to last server-known state.
   try {
     const res = await postJson(TILE_NUMBERS_URL, { enabled: desired });
     setToggleCheckedFromServer(res?.show_tile_numbers ?? res?.enabled);
   } catch {
-    // Revert to last known state, then attempt to refresh from /ui as the ultimate truth.
     setToggleCheckedFromServer(lastShowTileNumbers);
-    try {
-      const ui = await fetchJson(UI_URL);
-      setToggleCheckedFromServer(ui?.show_tile_numbers);
-    } catch {}
+  }
+});
+
+toggleOverlayState.addEventListener('change', async () => {
+  if (suppressOverlayToggleHandler) return;
+  const desired = Boolean(toggleOverlayState.checked);
+  try {
+    const res = await postJson(STATE_OVERLAY_URL, { enabled: desired });
+    setOverlayToggleCheckedFromServer(res?.show_overlay_state);
+  } catch {
+    setOverlayToggleCheckedFromServer(lastShowOverlayState);
   }
 });
 
 heatCanvas.addEventListener('click', async (ev) => {
-  // Determine which tile was clicked, then toggle it in the disabled set.
-  // Use the latest raw /status payload for hit-testing and grid dimensions.
   const payload = lastStatusPayload;
-
-  // Extract grid and tiles in a normalized way (helper handles missing structures).
   const { tiles, rows, cols } = getGridAndTiles(payload);
   if (!rows || !cols || !Array.isArray(tiles) || tiles.length !== rows * cols) return;
-
   const idx = tileIndexFromCanvasClick(heatCanvas, rows, cols, ev);
-
-  // Toggle membership.
   if (disabledTiles.has(idx)) disabledTiles.delete(idx);
   else disabledTiles.add(idx);
-
-  // Persist and reconcile with server response. If save fails, reload from server.
-  try {
-    await saveTileMask();
-  } catch {
-    await loadTileMask();
-  }
+  try { await saveTileMask(); } catch { await loadTileMask(); }
 });
-
-async function initUi() {
-  // Initial UI state:
-  // - Prefer /ui so the checkbox is correct even before the first /status response arrives.
-  // - Default to true if /ui is unavailable (sensible, user-visible behavior).
-  try {
-      const ui = await fetchJson(UI_URL);
-      setToggleCheckedFromServer(ui?.show_tile_numbers);
-      if (gridRowsInput && ui?.grid_rows) gridRowsInput.value = String(ui.grid_rows);
-      if (gridColsInput && ui?.grid_cols) gridColsInput.value = String(ui.grid_cols);
-  } catch {
-    setToggleCheckedFromServer(true);
-  }
-}
 
 applyGridBtn.addEventListener('click', async () => {
   const rows = Number(gridRowsInput?.value || 0);
   const cols = Number(gridColsInput?.value || 0);
   if (!Number.isInteger(rows) || !Number.isInteger(cols) || rows <= 0 || cols <= 0) return;
   try {
-    await postJson(GRID_URL, { rows, cols });
+    const res = await postJson(GRID_URL, { rows, cols });
+    applyUiValues(res);
     await loadTileMask();
   } catch {}
 });
 
-// Startup sequence:
-// - init UI (toggle state)
-// - load tile mask (server state)
-// - run the first tick immediately (fast first paint)
-// - then poll at a fixed interval
+applyRegionBtn.addEventListener('click', async () => {
+  const x = Number(regionXInput?.value || 0);
+  const y = Number(regionYInput?.value || 0);
+  const w = Number(regionWInput?.value || 0);
+  const h = Number(regionHInput?.value || 0);
+  try { await pushRegionUpdate(x, y, w, h); } catch {}
+});
+
+async function nudge(dx, dy) {
+  const x = Number(regionXInput?.value || 0) + dx;
+  const y = Number(regionYInput?.value || 0) + dy;
+  await pushRegionUpdate(x, y);
+}
+
+nudgeUpBtn.addEventListener('click', async () => { try { await nudge(0, -2); } catch {} });
+nudgeDownBtn.addEventListener('click', async () => { try { await nudge(0, 2); } catch {} });
+nudgeLeftBtn.addEventListener('click', async () => { try { await nudge(-2, 0); } catch {} });
+nudgeRightBtn.addEventListener('click', async () => { try { await nudge(2, 0); } catch {} });
+
+async function initUi() {
+  try {
+    const ui = await fetchJson(UI_URL);
+    applyUiValues(ui);
+  } catch {
+    setToggleCheckedFromServer(true);
+    setOverlayToggleCheckedFromServer(false);
+  }
+}
+
 initUi();
 loadTileMask();
 tick();

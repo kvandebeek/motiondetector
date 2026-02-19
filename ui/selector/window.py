@@ -19,7 +19,7 @@ from ui.selector.grid import GridGeometry
 from ui.selector.interaction import InteractionConfig, SelectorInteractor
 from ui.selector.paint import PaintConfig, SelectorPainter
 from ui.selector.region_emit import RegionEmitter
-from ui.selector.ui_settings import UiSettingsPoller
+from ui.selector.ui_settings import UiSettingsPoller, UiSettingsSnapshot
 from ui.tiles_sync import TilesSync
 from ui.selector.models import UiRegion
 
@@ -58,6 +58,7 @@ class SelectorWindow(QWidget):
         emit_inset_px: int,
         tile_label_text_color: str,
         show_tile_numbers: bool,
+        show_overlay_state: bool = False,
         tiles_sync: TilesSync,
         tiles_poll_ms: int,
         http_timeout_sec: float,
@@ -72,6 +73,8 @@ class SelectorWindow(QWidget):
 
         # Local visual state; can be updated by UiSettingsPoller or programmatically.
         self._show_tile_numbers = bool(show_tile_numbers)
+        self._show_overlay_state = bool(show_overlay_state)
+        self._current_state = "UNKNOWN"
 
         # External tiles sync object (polls /tiles and exposes disabled_tiles set).
         self._tiles_sync = tiles_sync
@@ -156,6 +159,7 @@ class SelectorWindow(QWidget):
         if url:
             p = UiSettingsPoller(url=url, poll_ms=int(ui_poll_ms), timeout_sec=float(http_timeout_sec), parent=self)
             p.valueChanged.connect(self.set_show_tile_numbers)  # type: ignore[arg-type]
+            p.settingsChanged.connect(self.apply_ui_settings)  # type: ignore[arg-type]
             self._ui_poller = p
 
         # Window chrome/flags: frameless + always-on-top tool window, transparent background.
@@ -200,6 +204,37 @@ class SelectorWindow(QWidget):
         if v == self._show_tile_numbers:
             return
         self._show_tile_numbers = v
+        self.update()
+
+
+    def apply_ui_settings(self, snapshot: object) -> None:
+        if not isinstance(snapshot, UiSettingsSnapshot):
+            return
+        self.set_show_tile_numbers(bool(snapshot.show_tile_numbers))
+        self._show_overlay_state = bool(snapshot.show_overlay_state)
+        self._current_state = str(snapshot.current_state or "UNKNOWN")
+
+        try:
+            gx = int(self.x())
+            gy = int(self.y())
+            gw = int(self.width())
+            gh = int(self.height())
+            if (
+                gx != int(snapshot.region_x)
+                or gy != int(snapshot.region_y)
+                or gw != int(snapshot.region_width)
+                or gh != int(snapshot.region_height)
+            ):
+                self.setGeometry(
+                    int(snapshot.region_x),
+                    int(snapshot.region_y),
+                    int(snapshot.region_width),
+                    int(snapshot.region_height),
+                )
+                self._region_emitter.emit(reason="ui-sync")
+        except Exception:
+            pass
+
         self.update()
 
     def _handle_close(self) -> None:
@@ -273,6 +308,8 @@ class SelectorWindow(QWidget):
             y_edges=y_edges,
             show_tile_numbers=self._show_tile_numbers,
             disabled_tiles=set(self._tiles_sync.disabled_tiles),
+            show_overlay_state=self._show_overlay_state,
+            current_state=self._current_state,
         )
 
     def mousePressEvent(self, event) -> None:  # type: ignore[override]

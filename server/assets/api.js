@@ -9,6 +9,8 @@ export const HISTORY_URL = '/history';
 export const UI_URL = '/ui';
 export const TILE_NUMBERS_URL = '/ui/tile-numbers';
 export const GRID_URL = '/ui/grid';
+export const REGION_URL = '/ui/region';
+export const STATE_OVERLAY_URL = '/ui/state-overlay';
 
 // Tile mask endpoints (get current disabled tiles / update them).
 // Intentionally separate constants even if the paths match, so call sites remain explicit.

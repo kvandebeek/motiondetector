@@ -93,6 +93,11 @@ def main() -> int:
         grid_rows=cfg.grid_rows,
         grid_cols=cfg.grid_cols,
         show_tile_numbers=cfg.show_tile_numbers,
+        show_overlay_state=bool(getattr(cfg, "show_overlay_state", False)),
+        region_x=int(cfg.initial_region["x"]),
+        region_y=int(cfg.initial_region["y"]),
+        region_width=int(cfg.initial_region["width"]),
+        region_height=int(cfg.initial_region["height"]),
     )
 
     # Start FastAPI/uvicorn server in a background thread.
@@ -163,6 +168,17 @@ def main() -> int:
         """
         with shared.lock:
             shared.region = r
+        try:
+            store.set_region(x=int(r.x), y=int(r.y), width=int(r.width), height=int(r.height))
+            patch_runtime_ui_motion_config(
+                "./config/config.json",
+                region_x=int(r.x),
+                region_y=int(r.y),
+                region_width=int(r.width),
+                region_height=int(r.height),
+            )
+        except Exception:
+            traceback.print_exc()
 
     def get_region() -> Region:
         """
@@ -314,6 +330,7 @@ def main() -> int:
         emit_inset_px=int(getattr(cfg, "analysis_inset_px", 0)),
         tile_label_text_color="#FFFFFF",
         show_tile_numbers=bool(cfg.show_tile_numbers),
+        show_overlay_state=bool(getattr(cfg, "show_overlay_state", False)),
         server_base_url_override=server_base_url,
         tiles_poll_ms=500,
         http_timeout_sec=0.35,

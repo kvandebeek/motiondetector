@@ -85,8 +85,8 @@ button:hover { border-color: rgba(255, 255, 255, 0.18); }
   /* Enforce a stable 2x2 dashboard layout. */
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-template-areas:
-    "json motion"
-    "audio heatmap";
+    "heatmap json"
+    "motion audio";
 }
 
 .panel-json { grid-area: json; }

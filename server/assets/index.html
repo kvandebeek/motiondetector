@@ -22,12 +22,36 @@
         <input id="gridCols" type="number" min="1" style="width:56px" />
         <button id="applyGrid">Apply</button>
       </label>
+      <label class="toggle" title="Grid position in pixels">
+        <span>X</span><input id="regionX" type="number" style="width:70px" />
+        <span>Y</span><input id="regionY" type="number" style="width:70px" />
+        <span>W</span><input id="regionW" type="number" min="1" style="width:70px" />
+        <span>H</span><input id="regionH" type="number" min="1" style="width:70px" />
+        <button id="nudgeUp">↑</button>
+        <button id="nudgeDown">↓</button>
+        <button id="nudgeLeft">←</button>
+        <button id="nudgeRight">→</button>
+        <button id="applyRegion">Apply</button>
+      </label>
+      <label class="toggle" title="Show current detector state in the selector chrome">
+        <input id="toggleOverlayState" type="checkbox" />
+        <span>Overlay state</span>
+      </label>
       <button id="copyJson">Copy JSON</button>
       <button id="quitBtn">Quit</button>
     </div>
   </header>
 
   <div class="grid dashboard-grid">
+    <section class="panel panel-heatmap">
+      <h2><span>Tiles heatmap (0 → 1)</span></h2>
+      <div class="heatwrap">
+        <canvas id="tilesHeatmap" width="900" height="540" aria-label="Tiles heatmap (click tile to disable/enable)"></canvas>
+      </div>
+      <div class="subtle" id="gridLabel" style="margin-top:10px;">grid: —</div>
+      <div class="subtle" style="margin-top:6px;">Click a tile to disable/enable it (disabled tiles are excluded from measurements).</div>
+    </section>
+
     <section class="panel panel-json">
       <h2><span>Status JSON</span><span class="subtle" id="tsLabel">—</span></h2>
 
@@ -41,26 +65,17 @@
     </section>
 
     <section class="panel panel-motion">
-      <h2><span>Motion mean (last {{HISTORY_SECONDS}}s)</span></h2>
+      <h2><span>Motion mean + peak (last {{HISTORY_SECONDS}}s)</span></h2>
       <div class="chartwrap">
         <canvas id="chart" width="900" height="540"></canvas>
       </div>
     </section>
 
     <section class="panel panel-audio">
-      <h2><span>Audio peak % (last {{HISTORY_SECONDS}}s)</span></h2>
+      <h2><span>Audio mean + peak % (last {{HISTORY_SECONDS}}s)</span></h2>
       <div class="chartwrap">
         <canvas id="audioChart" width="900" height="540"></canvas>
       </div>
-    </section>
-
-    <section class="panel panel-heatmap">
-      <h2><span>Tiles heatmap (0 → 1)</span></h2>
-      <div class="heatwrap">
-        <canvas id="tilesHeatmap" width="900" height="540" aria-label="Tiles heatmap (click tile to disable/enable)"></canvas>
-      </div>
-      <div class="subtle" id="gridLabel" style="margin-top:10px;">grid: —</div>
-      <div class="subtle" style="margin-top:6px;">Click a tile to disable/enable it (disabled tiles are excluded from measurements).</div>
     </section>
   </div>
 

@@ -180,7 +180,6 @@ canvas {
   width: 100%;
   height: auto;
   display: block;
-  aspect-ratio: 16 / 9;
   border-radius: 10px;
   cursor: pointer;
 }

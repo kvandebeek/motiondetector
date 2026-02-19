@@ -81,6 +81,18 @@ button:hover { border-color: rgba(255, 255, 255, 0.18); }
   gap: 14px;
 }
 
+.dashboard-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-areas:
+    "json motion"
+    "heatmap audio";
+}
+
+.panel-json { grid-area: json; }
+.panel-motion { grid-area: motion; }
+.panel-heatmap { grid-area: heatmap; }
+.panel-audio { grid-area: audio; }
+
 .panel {
   background: linear-gradient(180deg, var(--panel), var(--panel2));
   border: 1px solid var(--border);
@@ -205,6 +217,13 @@ canvas#tilesHeatmap {
 /* Responsive layout */
 @media (max-width: 1200px) {
   .grid { grid-template-columns: 1fr; }
+  .dashboard-grid {
+    grid-template-areas:
+      "json"
+      "motion"
+      "audio"
+      "heatmap";
+  }
   pre { height: 360px; }
 }
 

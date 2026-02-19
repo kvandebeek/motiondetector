@@ -21,7 +21,7 @@
   </header>
 
   <div class="grid dashboard-grid">
-    <section class="panel">
+    <section class="panel panel-json">
       <h2><span>Status JSON</span><span class="subtle" id="tsLabel">—</span></h2>
 
       <div class="pillrow">
@@ -33,21 +33,21 @@
       <pre id="jsonBox">{}</pre>
     </section>
 
-    <section class="panel">
+    <section class="panel panel-motion">
       <h2><span>Motion mean (last {{HISTORY_SECONDS}}s)</span></h2>
       <div class="chartwrap">
         <canvas id="chart" width="900" height="540"></canvas>
       </div>
     </section>
 
-    <section class="panel">
+    <section class="panel panel-audio">
       <h2><span>Audio level (last {{HISTORY_SECONDS}}s)</span></h2>
       <div class="chartwrap">
         <canvas id="audioChart" width="900" height="540"></canvas>
       </div>
     </section>
 
-    <section class="panel">
+    <section class="panel panel-heatmap">
       <h2><span>Tiles heatmap (0 → 1)</span></h2>
       <div class="heatwrap">
         <canvas id="tilesHeatmap" width="540" height="540" aria-label="Tiles heatmap (click tile to disable/enable)"></canvas>

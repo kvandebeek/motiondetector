@@ -1,3 +1,4 @@
+# File commentary: ui/selector/models.py - This file holds logic used by the motion detector project.
 # ui/ui_models.py
 from __future__ import annotations
 

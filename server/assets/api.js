@@ -1,3 +1,4 @@
+// File commentary: server/assets/api.js - This file contains browser-side behavior for the project.
 // server/assets/api.js
 
 // Centralized API route constants used by the browser UI.

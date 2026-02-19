@@ -1,3 +1,4 @@
+# File commentary: ui/ui_sync.py - This file holds logic used by the motion detector project.
 # ui/ui_sync.py
 from __future__ import annotations
 
@@ -40,6 +41,7 @@ class UiSync:
     - HTTP request is performed outside the lock to avoid blocking other callers.
     """
     def __init__(self, cfg: UiSyncConfig) -> None:
+        """Initialize this object with the provided inputs and prepare its internal state."""
         self._cfg = cfg
         self._lock = threading.Lock()
         self._last_show_tile_numbers: Optional[bool] = None

@@ -1,3 +1,4 @@
+# File commentary: ui/selector/paint.py - This file holds logic used by the motion detector project.
 # ui/selector_paint.py
 from __future__ import annotations
 
@@ -53,6 +54,7 @@ class SelectorPainter:
     """
 
     def __init__(self, *, cfg: PaintConfig, chrome: ChromeUi) -> None:
+        """Initialize this object with the provided inputs and prepare its internal state."""
         self._cfg = cfg
         self._chrome = chrome
 

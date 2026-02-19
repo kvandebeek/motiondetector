@@ -1,3 +1,4 @@
+# File commentary: server/status_store.py - This file holds logic used by the motion detector project.
 """Thread-safe in-memory state store shared by analyzer, UI, and HTTP routes.
 
 The store is intentionally the single source of truth for runtime status payloads,
@@ -330,10 +331,12 @@ class StatusStore:
             }
 
     def set_show_overlay_state(self, enabled: bool) -> None:
+        """Update show overlay state in this component's state."""
         with self._lock:
             self._show_overlay_state = bool(enabled)
 
     def set_region(self, *, x: int, y: int, width: int, height: int) -> None:
+        """Update region in this component's state."""
         with self._lock:
             self._region_x = int(x)
             self._region_y = int(y)
@@ -355,18 +358,22 @@ class StatusStore:
                     break
 
     def get_region(self) -> tuple[int, int, int, int]:
+        """Return the current region value for callers."""
         with self._lock:
             return (int(self._region_x), int(self._region_y), int(self._region_width), int(self._region_height))
 
     def set_monitors(self, monitors: list[dict[str, int]]) -> None:
+        """Update monitors in this component's state."""
         with self._lock:
             self._monitors = [dict(m) for m in monitors if isinstance(m, dict)]
 
     def set_current_monitor_id(self, monitor_id: int) -> None:
+        """Update current monitor id in this component's state."""
         with self._lock:
             self._current_monitor_id = int(monitor_id)
 
     def _current_state_locked(self) -> str:
+        """Handle current state locked for this module."""
         payload = self._latest
         if isinstance(payload, dict):
             video = payload.get("video")
@@ -382,11 +389,13 @@ class StatusStore:
         return "UNKNOWN"
 
     def set_grid(self, *, rows: int, cols: int) -> None:
+        """Update grid in this component's state."""
         with self._lock:
             self._grid_rows = max(1, int(rows))
             self._grid_cols = max(1, int(cols))
 
     def get_grid(self) -> tuple[int, int]:
+        """Return the current grid value for callers."""
         with self._lock:
             return int(self._grid_rows), int(self._grid_cols)
 

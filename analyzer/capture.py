@@ -1,3 +1,4 @@
+# File commentary: analyzer/capture.py - This file holds logic used by the motion detector project.
 """Screen-capture abstractions and region utilities.
 
 The code currently targets MSS while keeping backend handling explicit and typed. It

@@ -1,3 +1,4 @@
+# File commentary: ui/selector/chrome.py - This file holds logic used by the motion detector project.
 # ui/selector_chrome.py
 from __future__ import annotations
 
@@ -41,6 +42,7 @@ class ChromeUi:
     """
 
     def __init__(self, cfg: ChromeConfig) -> None:
+        """Initialize this object with the provided inputs and prepare its internal state."""
         self._cfg = cfg
         self._close_hover = False
 

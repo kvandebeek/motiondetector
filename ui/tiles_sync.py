@@ -1,3 +1,4 @@
+# File commentary: ui/tiles_sync.py - This file holds logic used by the motion detector project.
 # ui/tiles_sync.py
 from __future__ import annotations
 
@@ -83,6 +84,7 @@ class TilesSync:
     - _inflight is a simple guard to prevent re-entrancy (e.g., spam-click while a PUT is ongoing).
     """
     def __init__(self, cfg: TilesSyncConfig) -> None:
+        """Initialize this object with the provided inputs and prepare its internal state."""
         self._cfg = cfg
         self._disabled_tiles: Set[int] = set()
 

@@ -1,3 +1,4 @@
+# File commentary: ui/win32_dpi.py - This file holds logic used by the motion detector project.
 # ui/win32_dpi.py
 from __future__ import annotations
 

@@ -1,3 +1,4 @@
+# File commentary: ui/testdata_window.py - This file holds logic used by the motion detector project.
 # ui/testdata_window.py
 from __future__ import annotations
 
@@ -49,24 +50,29 @@ class DetectorSnapshot:
 
 
 def _now_iso_utc() -> str:
+    """Handle now iso utc for this module."""
     return datetime.now(timezone.utc).isoformat()
 
 
 def _safe_float(x: Any) -> Optional[float]:
+    """Handle safe float for this module."""
     return float(x) if isinstance(x, (int, float)) else None
 
 
 def _safe_str(x: Any) -> Optional[str]:
+    """Handle safe str for this module."""
     return str(x) if x is not None else None
 
 
 def _safe_bool(x: Any) -> Optional[bool]:
+    """Handle safe bool for this module."""
     if isinstance(x, bool):
         return x
     return None
 
 
 def _tiles_stats(tiles: Optional[Sequence[float]]) -> tuple[Optional[float], Optional[float], list[tuple[int, float]]]:
+    """Handle tiles stats for this module."""
     if tiles is None:
         return None, None, []
     vals: list[float] = []
@@ -83,6 +89,7 @@ def _tiles_stats(tiles: Optional[Sequence[float]]) -> tuple[Optional[float], Opt
 
 class TestDataWindow(QWidget):
     def __init__(self, *, engine: TestDataEngine, cfg: TestDataWindowConfig) -> None:
+        """Initialize this object with the provided inputs and prepare its internal state."""
         super().__init__()
         self._engine = engine
         self._cfg = cfg
@@ -138,6 +145,7 @@ class TestDataWindow(QWidget):
     # ----------------------------
 
     def _tick_frame(self) -> None:
+        """Tick frame for this module's workflow."""
         self._frame_index += 1
 
         self._engine.set_size(w=self.width(), h=self.height())
@@ -147,6 +155,7 @@ class TestDataWindow(QWidget):
         self.update()
 
     def _poll_status(self) -> None:
+        """Poll status for this module's workflow."""
         if self._http is None or self._status_url is None:
             return
 
@@ -218,6 +227,7 @@ class TestDataWindow(QWidget):
             pass
 
     def _is_valid_detector_sample(self, det: DetectorSnapshot) -> bool:
+        """Return True when the current input/state matches the 'valid detector sample' condition."""
         if det.capture_state is not None and det.capture_state != "OK":
             return False
         if det.video_stale is True:
@@ -246,6 +256,7 @@ class TestDataWindow(QWidget):
             self._paint_hud(p, self._last, self._det)
 
     def _paint_subtitle(self, p: QPainter, sub: SubtitleOverlay) -> None:
+        """Handle paint subtitle for this module."""
         p.save()
         p.setOpacity(float(sub.alpha))
 
@@ -260,6 +271,7 @@ class TestDataWindow(QWidget):
         p.restore()
 
     def _paint_hud(self, p: QPainter, last: FrameOut, det: DetectorSnapshot) -> None:
+        """Handle paint hud for this module."""
         font = QFont()
         font.setPixelSize(14)
         font.setBold(True)
@@ -313,6 +325,7 @@ class TestDataWindow(QWidget):
     # ----------------------------
 
     def _write_detector_log_row(self) -> None:
+        """Write detector log row for this module's workflow."""
         if self._last is None:
             return
 
@@ -353,6 +366,7 @@ class TestDataWindow(QWidget):
     # ----------------------------
 
     def _update_scene_stats_for_sample(self) -> None:
+        """Update scene stats for sample for this module's workflow."""
         if self._last is None:
             return
 
@@ -450,6 +464,7 @@ class TestDataWindow(QWidget):
     # ----------------------------
 
     def _to_qimage_rgb(self, rgb: np.ndarray) -> QImage:
+        """Convert input data to qimage rgb format for rendering or downstream logic."""
         if rgb.dtype != np.uint8 or rgb.ndim != 3 or rgb.shape[2] != 3:
             raise ValueError("Expected RGB uint8 (H,W,3)")
         h, w = int(rgb.shape[0]), int(rgb.shape[1])

@@ -1,3 +1,4 @@
+# File commentary: ui/selector/region_emit.py - This file holds logic used by the motion detector project.
 # ui/selector_region_emit.py
 from __future__ import annotations
 

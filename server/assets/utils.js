@@ -1,3 +1,4 @@
+// File commentary: server/assets/utils.js - This file contains browser-side behavior for the project.
 // server/assets/utils.js
 
 /**
@@ -10,6 +11,7 @@
  * Used throughout the UI to keep motion metrics and color mapping stable even when
  * payloads are partial or malformed.
  */
+// clamp01 keeps this part of the interface easy to understand and use.
  export function clamp01(x) {
   const v = Number(x) || 0;
   if (v < 0) return 0;
@@ -29,6 +31,7 @@
  * Note:
  * - Uses the browser locale/timezone, which is generally what the user expects for a dashboard.
  */
+// fmtTime keeps this part of the interface easy to understand and use.
 export function fmtTime(ts) {
   try {
     const d = new Date(Number(ts) * 1000);
@@ -54,6 +57,7 @@ export function fmtTime(ts) {
  * - This does not enforce monotonicity if rounding ever produces equal/decreasing edges.
  *   If you need strict monotonic guarantees, add a fix-up pass (as done in the Python version).
  */
+// edges keeps this part of the interface easy to understand and use.
 export function edges(size, parts) {
   const out = new Array(parts + 1);
   for (let i = 0; i <= parts; i++) out[i] = Math.round((i * size) / parts);
@@ -74,6 +78,7 @@ export function edges(size, parts) {
  * - This is intentionally simple (no gradients/colormaps) and fast to compute per tile.
  * - Uses clamp01 so invalid inputs do not break the renderer.
  */
+// colorFor01 keeps this part of the interface easy to understand and use.
 export function colorFor01(x) {
   const v = clamp01(x);
   const r = Math.round(220 * (1 - v) + 40 * v);
@@ -93,6 +98,7 @@ export function colorFor01(x) {
  * Returns:
  * - { rows, cols } if n is a perfect square, else { rows: 0, cols: 0 }.
  */
+// inferSquareGridFromTiles keeps this part of the interface easy to understand and use.
 export function inferSquareGridFromTiles(tilesLen) {
   const n = Number(tilesLen) || 0;
   if (n <= 0) return { rows: 0, cols: 0 };

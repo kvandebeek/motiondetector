@@ -1,3 +1,4 @@
+# File commentary: server/server.py - This file holds logic used by the motion detector project.
 """FastAPI application assembly and server-thread launcher.
 
 This module exposes the runtime API consumed by both the browser dashboard and the
@@ -25,6 +26,7 @@ _ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 
 
 def _parse_bool(value: Any) -> bool | None:
+    """Parse bool and return normalized values for downstream code."""
     if isinstance(value, bool):
         return value
     if isinstance(value, str):
@@ -101,6 +103,7 @@ def create_app(store: StatusStore, on_settings_changed=None) -> FastAPI:
 
     @app.post("/ui/grid")
     async def ui_grid(body: dict[str, Any] = Body(default={})) -> JSONResponse:
+        """Handle ui grid for this module."""
         rows = body.get("rows")
         cols = body.get("cols")
         if not isinstance(rows, int) or not isinstance(cols, int) or rows <= 0 or cols <= 0:
@@ -112,6 +115,7 @@ def create_app(store: StatusStore, on_settings_changed=None) -> FastAPI:
 
     @app.post("/ui/state-overlay")
     async def ui_state_overlay(body: dict[str, Any] = Body(default={})) -> JSONResponse:
+        """Handle ui state overlay for this module."""
         enabled = _parse_bool(body.get("enabled"))
         if enabled is None:
             return JSONResponse({"error": "enabled must be boolean"}, status_code=400)
@@ -122,6 +126,7 @@ def create_app(store: StatusStore, on_settings_changed=None) -> FastAPI:
 
     @app.post("/ui/region")
     async def ui_region(body: dict[str, Any] = Body(default={})) -> JSONResponse:
+        """Handle ui region for this module."""
         x = body.get("x")
         y = body.get("y")
         width = body.get("width")
@@ -220,6 +225,7 @@ def run_server_in_thread(*, host: str, port: int, store: StatusStore, on_setting
     app = create_app(store, on_settings_changed=on_settings_changed)
 
     def _run() -> None:
+        """Execute the main loop for this component until shutdown is requested."""
         # Uvicorn manages its own event loop internally.
         uvicorn.run(app, host=host, port=port, log_level="error")
 

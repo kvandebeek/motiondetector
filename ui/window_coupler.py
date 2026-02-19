@@ -1,3 +1,4 @@
+# File commentary: ui/window_coupler.py - This file holds logic used by the motion detector project.
 # ui/window_coupler.py
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ class CouplerConfig:
 
 class WindowCoupler(QObject):
     def __init__(self, *, a: QWidget, b: QWidget, cfg: CouplerConfig = CouplerConfig()) -> None:
+        """Initialize this object with the provided inputs and prepare its internal state."""
         super().__init__()
         self._a = a
         self._b = b
@@ -30,6 +32,7 @@ class WindowCoupler(QObject):
         self._b.destroyed.connect(lambda _=None: self._detach())  # type: ignore[arg-type]
 
     def _detach(self) -> None:
+        """Handle detach for this module."""
         try:
             self._a.removeEventFilter(self)
         except Exception:

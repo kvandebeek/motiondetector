@@ -1,3 +1,4 @@
+# File commentary: ui/selector/interaction.py - This file holds logic used by the motion detector project.
 # ui/selector_interaction.py
 from __future__ import annotations
 
@@ -304,6 +305,7 @@ class SelectorInteractor:
 
     @property
     def is_dragging(self) -> bool:
+        """Return True when the current input/state matches the 'dragging' condition."""
         return self._drag_mode != "none"
 
     def on_mouse_release(self) -> None:

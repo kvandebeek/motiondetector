@@ -1,3 +1,4 @@
+# File commentary: config/config.py - This file holds logic used by the motion detector project.
 """Configuration schema and JSON validation helpers.
 
 `load_config` validates and normalizes runtime settings from `config/config.json`

@@ -1,3 +1,4 @@
+# File commentary: ui/selector/state.py - This file holds logic used by the motion detector project.
 # ui/selector_state.py
 from __future__ import annotations
 

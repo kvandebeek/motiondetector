@@ -41,6 +41,10 @@ const nudgeUpBtn = document.getElementById('nudgeUp');
 const nudgeDownBtn = document.getElementById('nudgeDown');
 const nudgeLeftBtn = document.getElementById('nudgeLeft');
 const nudgeRightBtn = document.getElementById('nudgeRight');
+const wPlusBtn = document.getElementById('wPlus');
+const wMinusBtn = document.getElementById('wMinus');
+const hPlusBtn = document.getElementById('hPlus');
+const hMinusBtn = document.getElementById('hMinus');
 
 const chartCanvas = document.getElementById('chart');
 const audioChartCanvas = document.getElementById('audioChart');
@@ -52,6 +56,19 @@ let suppressOverlayToggleHandler = false;
 let lastShowTileNumbers = true;
 let lastShowOverlayState = false;
 let lastStatusPayload = null;
+const uiLocks = { grid: 0, region: 0 };
+
+function lockUi(key, ms = 1200) {
+  uiLocks[key] = Date.now() + ms;
+}
+
+function isUiLocked(key) {
+  return Date.now() < (uiLocks[key] || 0);
+}
+
+function hasFocus(el) {
+  return Boolean(el) && document.activeElement === el;
+}
 
 function setToggleCheckedFromServer(value) {
   const v = Boolean(value);
@@ -77,8 +94,6 @@ function statusForDisplay(payload) {
   return { ...payload, video: { ...payload.video, tiles: tiles.map((v) => (v === null ? 'disabled' : v)) } };
 }
 
-
-
 function renderMonitorInfo(ui) {
   if (!monitorInfo) return;
   const monitors = Array.isArray(ui?.monitors) ? ui.monitors : [];
@@ -99,12 +114,25 @@ function renderMonitorInfo(ui) {
 
 function applyUiValues(ui) {
   if (!ui || typeof ui !== 'object') return;
-  if (gridRowsInput && ui.grid_rows) gridRowsInput.value = String(ui.grid_rows);
-  if (gridColsInput && ui.grid_cols) gridColsInput.value = String(ui.grid_cols);
-  if (regionXInput && Number.isFinite(ui.region_x)) regionXInput.value = String(ui.region_x);
-  if (regionYInput && Number.isFinite(ui.region_y)) regionYInput.value = String(ui.region_y);
-  if (regionWInput && Number.isFinite(ui.region_width)) regionWInput.value = String(ui.region_width);
-  if (regionHInput && Number.isFinite(ui.region_height)) regionHInput.value = String(ui.region_height);
+
+  if (!isUiLocked('grid') && !hasFocus(gridRowsInput) && !hasFocus(gridColsInput)) {
+    if (gridRowsInput && Number.isFinite(ui.grid_rows)) gridRowsInput.value = String(ui.grid_rows);
+    if (gridColsInput && Number.isFinite(ui.grid_cols)) gridColsInput.value = String(ui.grid_cols);
+  }
+
+  if (
+    !isUiLocked('region')
+    && !hasFocus(regionXInput)
+    && !hasFocus(regionYInput)
+    && !hasFocus(regionWInput)
+    && !hasFocus(regionHInput)
+  ) {
+    if (regionXInput && Number.isFinite(ui.region_x)) regionXInput.value = String(ui.region_x);
+    if (regionYInput && Number.isFinite(ui.region_y)) regionYInput.value = String(ui.region_y);
+    if (regionWInput && Number.isFinite(ui.region_width)) regionWInput.value = String(ui.region_width);
+    if (regionHInput && Number.isFinite(ui.region_height)) regionHInput.value = String(ui.region_height);
+  }
+
   setToggleCheckedFromServer(ui.show_tile_numbers);
   setOverlayToggleCheckedFromServer(ui.show_overlay_state);
   renderMonitorInfo(ui);
@@ -147,7 +175,10 @@ async function pushRegionUpdate(x, y, widthOverride = null, heightOverride = nul
   const width = widthOverride ?? Number(regionWInput?.value || lastStatusPayload?.ui?.region_width || 0);
   const height = heightOverride ?? Number(regionHInput?.value || lastStatusPayload?.ui?.region_height || 0);
   if (!Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) return;
+
+  lockUi('region');
   const ui = await postJson(REGION_URL, { x, y, width, height });
+  uiLocks.region = 0;
   applyUiValues(ui);
 }
 
@@ -221,7 +252,9 @@ applyGridBtn.addEventListener('click', async () => {
   const cols = Number(gridColsInput?.value || 0);
   if (!Number.isInteger(rows) || !Number.isInteger(cols) || rows <= 0 || cols <= 0) return;
   try {
+    lockUi('grid');
     const res = await postJson(GRID_URL, { rows, cols });
+    uiLocks.grid = 0;
     applyUiValues(res);
     await loadTileMask();
   } catch {}
@@ -241,10 +274,22 @@ async function nudge(dx, dy) {
   await pushRegionUpdate(x, y);
 }
 
+async function nudgeSize(dw, dh) {
+  const x = Number(regionXInput?.value || 0);
+  const y = Number(regionYInput?.value || 0);
+  const w = Math.max(1, Number(regionWInput?.value || 0) + dw);
+  const h = Math.max(1, Number(regionHInput?.value || 0) + dh);
+  await pushRegionUpdate(x, y, w, h);
+}
+
 nudgeUpBtn.addEventListener('click', async () => { try { await nudge(0, -2); } catch {} });
 nudgeDownBtn.addEventListener('click', async () => { try { await nudge(0, 2); } catch {} });
 nudgeLeftBtn.addEventListener('click', async () => { try { await nudge(-2, 0); } catch {} });
 nudgeRightBtn.addEventListener('click', async () => { try { await nudge(2, 0); } catch {} });
+wPlusBtn.addEventListener('click', async () => { try { await nudgeSize(2, 0); } catch {} });
+wMinusBtn.addEventListener('click', async () => { try { await nudgeSize(-2, 0); } catch {} });
+hPlusBtn.addEventListener('click', async () => { try { await nudgeSize(0, 2); } catch {} });
+hMinusBtn.addEventListener('click', async () => { try { await nudgeSize(0, -2); } catch {} });
 
 async function initUi() {
   try {

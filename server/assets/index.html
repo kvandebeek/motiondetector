@@ -11,33 +11,43 @@
   <header>
     <h1>motiondetector</h1>
     <div class="actions">
-      <label class="toggle" title="Show numbers on the selector overlay grid">
-        <input id="toggleTileNumbers" type="checkbox" />
-        <span>Tile numbers</span>
-      </label>
-      <label class="toggle" title="Change grid at runtime">
+      <div class="toggle control-group" title="Change grid at runtime and overlay labels">
         <span>Grid</span>
         <input id="gridRows" type="number" min="1" style="width:56px" />
         <span>x</span>
         <input id="gridCols" type="number" min="1" style="width:56px" />
         <button id="applyGrid">Apply</button>
-      </label>
-      <label class="toggle" title="Grid position in pixels">
-        <span>X</span><input id="regionX" type="number" style="width:70px" />
-        <span>Y</span><input id="regionY" type="number" style="width:70px" />
-        <span>W</span><input id="regionW" type="number" min="1" style="width:70px" />
-        <span>H</span><input id="regionH" type="number" min="1" style="width:70px" />
-        <button id="nudgeUp">↑</button>
-        <button id="nudgeDown">↓</button>
-        <button id="nudgeLeft">←</button>
-        <button id="nudgeRight">→</button>
-        <button id="applyRegion">Apply</button>
-      </label>
+        <label class="inline-check" title="Show numbers on the selector overlay grid">
+          <input id="toggleTileNumbers" type="checkbox" />
+          <span>Tile numbers</span>
+        </label>
+      </div>
+
+      <div class="toggle control-group" title="Grid position and size in pixels">
+        <div class="rowline">
+          <span>X</span><input id="regionX" type="number" style="width:76px" />
+          <span>Y</span><input id="regionY" type="number" style="width:76px" />
+          <button id="nudgeUp" class="btn-mini">↑</button>
+          <button id="nudgeDown" class="btn-mini">↓</button>
+          <button id="nudgeLeft" class="btn-mini">←</button>
+          <button id="nudgeRight" class="btn-mini">→</button>
+        </div>
+        <div class="rowline">
+          <span>W</span><input id="regionW" type="number" min="1" style="width:76px" />
+          <button id="wPlus" class="btn-mini">W+</button>
+          <button id="wMinus" class="btn-mini">W-</button>
+          <span>H</span><input id="regionH" type="number" min="1" style="width:76px" />
+          <button id="hPlus" class="btn-mini">H+</button>
+          <button id="hMinus" class="btn-mini">H-</button>
+          <button id="applyRegion">Apply</button>
+        </div>
+      </div>
+
       <label class="toggle" title="Show current detector state in the selector chrome">
         <input id="toggleOverlayState" type="checkbox" />
         <span>Overlay state</span>
       </label>
-      <button id="copyJson">Copy JSON</button>
+
       <button id="quitBtn">Quit</button>
     </div>
     <div class="subtle" id="monitorInfo">monitor: —</div>
@@ -54,7 +64,13 @@
     </section>
 
     <section class="panel panel-json">
-      <h2><span>Status JSON</span><span class="subtle" id="tsLabel">—</span></h2>
+      <h2>
+        <span>Status JSON</span>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="subtle" id="tsLabel">—</span>
+          <button id="copyJson" class="btn-mini">Copy JSON</button>
+        </div>
+      </h2>
 
       <div class="pillrow">
         <span class="pill" id="pillVideo">video: —</span>

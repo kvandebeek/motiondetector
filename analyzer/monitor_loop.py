@@ -76,6 +76,7 @@ class DetectionParams:
     analysis_inset_px: int = 10
 
     audio_enabled: bool = True
+    audio_backend: str = "pyaudiowpatch"
     audio_device_substr: str = ""
     audio_samplerate: int = 48_000
     audio_channels: int = 2
@@ -308,6 +309,7 @@ class MonitorLoop:
         self._audio_meter = AudioLoopbackMeter(
             AudioMeterConfig(
                 enabled=bool(getattr(params, "audio_enabled", True)),
+                backend=str(getattr(params, "audio_backend", "pyaudiowpatch")),
                 device_substr=str(getattr(params, "audio_device_substr", "")),
                 samplerate=int(getattr(params, "audio_samplerate", 48_000)),
                 channels=int(getattr(params, "audio_channels", 2)),

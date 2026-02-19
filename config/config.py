@@ -101,6 +101,7 @@ class AppConfig:
     # Audio loopback settings
     # -----------------------------
     audio_enabled: bool
+    audio_backend: str
     audio_device_substr: str
     audio_samplerate: int
     audio_channels: int
@@ -319,6 +320,10 @@ def load_config(path: str) -> AppConfig:
 
     # ---- Audio loopback ----
     audio_enabled = _opt_bool(audio_obj.get("enabled"), "audio.enabled", True)
+    audio_backend = str(audio_obj.get("backend", "pyaudiowpatch")).strip().lower()
+    if audio_backend not in ("pyaudiowpatch", "soundcard", "auto", "default"):
+        raise ValueError("audio.backend must be one of: pyaudiowpatch, soundcard, auto")
+
     audio_device_substr_raw = audio_obj.get("device_substr")
     if audio_device_substr_raw is None:
         audio_device_substr = ""
@@ -382,6 +387,7 @@ def load_config(path: str) -> AppConfig:
         recording_cooldown_seconds=recording_cooldown_seconds,
         recording_assets_dir=recording_assets_dir,
         audio_enabled=audio_enabled,
+        audio_backend=audio_backend,
         audio_device_substr=audio_device_substr,
         audio_samplerate=audio_samplerate,
         audio_channels=audio_channels,

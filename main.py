@@ -192,6 +192,7 @@ def main() -> int:
         record_stop_grace_seconds=int(getattr(cfg, "record_stop_grace_seconds", 10)),
         analysis_inset_px=int(getattr(cfg, "analysis_inset_px", 0)),
         audio_enabled=bool(getattr(cfg, "audio_enabled", True)),
+        audio_backend=str(getattr(cfg, "audio_backend", "pyaudiowpatch")),
         audio_device_substr=str(getattr(cfg, "audio_device_substr", "")),
         audio_samplerate=int(getattr(cfg, "audio_samplerate", 48_000)),
         audio_channels=int(getattr(cfg, "audio_channels", 2)),

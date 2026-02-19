@@ -45,6 +45,7 @@
     "block_ms": 250,
     "calib_sec": 2.0,
     "factor": 2.5,
-    "abs_min": 0.00012
+    "abs_min": 0.00012,
+    "backend": "pyaudiowpatch"
   }
 }

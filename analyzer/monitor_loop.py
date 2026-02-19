@@ -520,7 +520,13 @@ class MonitorLoop:
 
         if not all_tiles_disabled:
             frame_bgr = _bgra_to_bgr(frame)
-            self._recorder.update(now_ts=ts, state=video_state, frame_bgr=frame_bgr)
+            try:
+                self._recorder.update(now_ts=ts, state=video_state, frame_bgr=frame_bgr)
+            except Exception as e:
+                # Recording failures should not break capture/detection payloads.
+                payload_errors = payload.get("errors")
+                if isinstance(payload_errors, list):
+                    payload_errors.append(f"recorder_failed: {e}")
 
         self._prev_state = video_state
         _ = mean_norm_unmasked  # retained for future telemetry if needed

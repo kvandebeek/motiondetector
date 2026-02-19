@@ -1,53 +1,39 @@
 // server/assets/chart.js
 import { clamp01 } from './utils.js';
 
-/**
- * Draw a simple time-series chart of video.motion_mean onto a canvas.
- */
 export function drawChart(canvas, historyPayloads) {
   drawSeriesChart({
     canvas,
     historyPayloads,
-    mapper: (p) => ({ y: Number(p?.video?.motion_mean) || 0 }),
+    mapper: (p) => ({
+      mean: Number(p?.video?.motion_mean) || 0,
+      peak: Number(p?.video?.motion_instant_top1) || 0,
+    }),
     emptyText: 'Collecting history…',
-    lineColorLeft: 'rgba(120, 190, 255, 0.95)',
-    yLabelTop: '1.0',
-    yLabelBottom: '0.0',
+    meanColor: 'rgba(90, 220, 120, 0.95)',
+    peakColor: 'rgba(255, 80, 80, 0.95)',
+    yLabelTop: 'MAX',
+    yLabelBottom: 'MIN',
   });
 }
 
-/**
- * Draw audio history as two lines (left/right), where input values are expected
- * to be percentages in [0..100].
- */
 export function drawAudioChart(canvas, historyPayloads) {
   drawSeriesChart({
     canvas,
     historyPayloads,
     mapper: (p) => ({
-      left: (Number(p?.audio?.left) || 0) / 100,
-      right: (Number(p?.audio?.right) || 0) / 100,
+      mean: (Number(p?.audio?.left) || 0) / 100,
+      peak: (Number(p?.audio?.right) || 0) / 100,
     }),
     emptyText: 'Collecting audio history…',
-    lineColorLeft: 'rgba(120, 190, 255, 0.95)',
-    lineColorRight: 'rgba(255, 170, 90, 0.95)',
-    yLabelTop: '100',
-    yLabelBottom: '0',
-    stereo: true,
+    meanColor: 'rgba(90, 220, 120, 0.95)',
+    peakColor: 'rgba(255, 80, 80, 0.95)',
+    yLabelTop: 'MAX',
+    yLabelBottom: 'MIN',
   });
 }
 
-function drawSeriesChart({
-  canvas,
-  historyPayloads,
-  mapper,
-  emptyText,
-  lineColorLeft,
-  lineColorRight,
-  yLabelTop,
-  yLabelBottom,
-  stereo = false,
-}) {
+function drawSeriesChart({ canvas, historyPayloads, mapper, emptyText, meanColor, peakColor, yLabelTop, yLabelBottom }) {
   const ctx = canvas?.getContext?.('2d');
   if (!ctx) return;
 
@@ -63,8 +49,8 @@ function drawSeriesChart({
       const mapped = mapper(p) || {};
       return {
         t: Number(p?.timestamp) || 0,
-        l: clamp01(stereo ? mapped.left : mapped.y),
-        r: clamp01(mapped.right),
+        mean: clamp01(mapped.mean),
+        peak: clamp01(mapped.peak),
       };
     })
     .filter((p) => p.t > 0)
@@ -86,10 +72,15 @@ function drawSeriesChart({
     ctx.fillText(emptyText, 16, 28);
 
     if (pts.length === 1) {
-      const y = (h - 20) - pts[0].l * (h - 40);
-      ctx.fillStyle = lineColorLeft;
+      const yMean = (h - 20) - pts[0].mean * (h - 40);
+      const yPeak = (h - 20) - pts[0].peak * (h - 40);
+      ctx.fillStyle = meanColor;
       ctx.beginPath();
-      ctx.arc(40, y, 3, 0, Math.PI * 2);
+      ctx.arc(40, yMean, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = peakColor;
+      ctx.beginPath();
+      ctx.arc(44, yPeak, 3, 0, Math.PI * 2);
       ctx.fill();
     }
 
@@ -104,28 +95,21 @@ function drawSeriesChart({
   const tMax = pts[pts.length - 1].t;
   const tSpan = Math.max(1e-6, tMax - tMin);
 
-  ctx.strokeStyle = lineColorLeft;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  for (let i = 0; i < pts.length; i++) {
-    const x = 40 + ((pts[i].t - tMin) / tSpan) * (w - 50);
-    const y = (h - 20) - pts[i].l * (h - 40);
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  }
-  ctx.stroke();
-
-  if (stereo) {
-    ctx.strokeStyle = lineColorRight;
+  const drawLine = (key, color) => {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
     ctx.beginPath();
     for (let i = 0; i < pts.length; i++) {
       const x = 40 + ((pts[i].t - tMin) / tSpan) * (w - 50);
-      const y = (h - 20) - pts[i].r * (h - 40);
+      const y = (h - 20) - pts[i][key] * (h - 40);
       if (i === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     }
     ctx.stroke();
-  }
+  };
+
+  drawLine('mean', meanColor);
+  drawLine('peak', peakColor);
 
   ctx.fillStyle = 'rgba(255,255,255,0.55)';
   ctx.font = '12px system-ui';

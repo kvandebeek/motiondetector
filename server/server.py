@@ -24,6 +24,18 @@ from server.status_store import StatusStore
 _ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 
 
+def _parse_bool(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        v = value.strip().lower()
+        if v in {"1", "true", "yes", "on"}:
+            return True
+        if v in {"0", "false", "no", "off"}:
+            return False
+    return None
+
+
 def create_app(store: StatusStore, on_settings_changed=None) -> FastAPI:
     """
     Build the FastAPI application.
@@ -96,6 +108,31 @@ def create_app(store: StatusStore, on_settings_changed=None) -> FastAPI:
         store.set_grid(rows=rows, cols=cols)
         if callable(on_settings_changed):
             on_settings_changed(grid_rows=rows, grid_cols=cols)
+        return JSONResponse(store.get_ui_settings())
+
+    @app.post("/ui/state-overlay")
+    async def ui_state_overlay(body: dict[str, Any] = Body(default={})) -> JSONResponse:
+        enabled = _parse_bool(body.get("enabled"))
+        if enabled is None:
+            return JSONResponse({"error": "enabled must be boolean"}, status_code=400)
+        store.set_show_overlay_state(enabled)
+        if callable(on_settings_changed):
+            on_settings_changed(show_overlay_state=enabled)
+        return JSONResponse(store.get_ui_settings())
+
+    @app.post("/ui/region")
+    async def ui_region(body: dict[str, Any] = Body(default={})) -> JSONResponse:
+        x = body.get("x")
+        y = body.get("y")
+        width = body.get("width")
+        height = body.get("height")
+        if not all(isinstance(v, int) for v in [x, y, width, height]):
+            return JSONResponse({"error": "x,y,width,height must be integers"}, status_code=400)
+        if int(width) <= 0 or int(height) <= 0:
+            return JSONResponse({"error": "width and height must be > 0"}, status_code=400)
+        store.set_region(x=int(x), y=int(y), width=int(width), height=int(height))
+        if callable(on_settings_changed):
+            on_settings_changed(region_x=int(x), region_y=int(y), region_width=int(width), region_height=int(height))
         return JSONResponse(store.get_ui_settings())
 
     @app.get("/status")

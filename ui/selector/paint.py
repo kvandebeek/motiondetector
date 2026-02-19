@@ -131,6 +131,8 @@ class SelectorPainter:
         y_edges: list[int],
         show_tile_numbers: bool,
         disabled_tiles: set[int],
+        show_overlay_state: bool,
+        current_state: str,
     ) -> None:
         """
         Paint the entire selector overlay.
@@ -150,6 +152,18 @@ class SelectorPainter:
 
         # Top chrome bar (title area / background).
         self._chrome.draw_bar(p, widget_w=widget_w, inner_top=inner.top())
+
+
+        if show_overlay_state:
+            p.save()
+            p.setPen(QColor(255, 255, 255, 230))
+            f = QFont()
+            f.setPixelSize(14)
+            f.setBold(True)
+            p.setFont(f)
+            label = f"STATE: {str(current_state or 'UNKNOWN')}"
+            p.drawText(QRect(10, 0, max(1, widget_w - 80), max(1, inner.top())), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, label)
+            p.restore()
 
         # Border around the inner region.
         pen = QPen(Qt.GlobalColor.cyan)

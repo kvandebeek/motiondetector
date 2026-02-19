@@ -5,6 +5,8 @@
   --text: #e8eefc;
   --muted: #9aa7c6;
   --border: rgba(255, 255, 255, 0.08);
+  --ctl-h: 32px;
+  --ctl-radius: 8px;
 }
 
 * { box-sizing: border-box; }
@@ -34,11 +36,11 @@ header h1 {
 }
 
 .actions {
-  display: flex;
-  gap: 10px;
+  display: grid;
+  grid-auto-flow: column;
   align-items: center;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  gap: 10px;
+  justify-content: end;
 }
 
 button {
@@ -85,8 +87,8 @@ button:hover { border-color: rgba(255, 255, 255, 0.18); }
   /* Enforce a stable 2x2 dashboard layout. */
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-template-areas:
-    "json motion"
-    "audio heatmap";
+    "heatmap json"
+    "motion audio";
 }
 
 .panel-json { grid-area: json; }
@@ -137,6 +139,21 @@ button:hover { border-color: rgba(255, 255, 255, 0.18); }
   background: rgba(255, 255, 255, 0.03);
   font-weight: 700;
   font-size: 13px;
+}
+
+.pill-state-ok {
+  background: rgba(32, 155, 80, 0.28);
+  border-color: rgba(70, 210, 120, 0.5);
+}
+
+.pill-state-warn {
+  background: rgba(191, 120, 20, 0.28);
+  border-color: rgba(250, 180, 80, 0.5);
+}
+
+.pill-state-alert {
+  background: rgba(180, 44, 44, 0.28);
+  border-color: rgba(255, 100, 100, 0.55);
 }
 
 pre {
@@ -225,4 +242,104 @@ canvas#tilesHeatmap {
 /* Keep dashboard in 2x2 layout; slightly tighten JSON panel on narrow screens. */
 @media (max-width: 1200px) {
   pre { height: 280px; }
+}
+
+
+.control-group {
+  display: grid;
+  row-gap: 10px;
+  align-items: center;
+  padding: 12px 14px;
+}
+
+.rowline {
+  display: grid;
+  align-items: center;
+}
+
+.rowline-dual {
+  grid-template-columns: 1fr 1fr;
+  column-gap: 12px;
+}
+
+.field {
+  display: grid;
+  grid-template-columns: minmax(36px, auto) var(--ctl-h) 84px var(--ctl-h) minmax(78px, auto);
+  align-items: center;
+  column-gap: 10px;
+}
+
+.field-with-hint {
+  grid-template-columns: minmax(64px, auto) var(--ctl-h) 84px var(--ctl-h) minmax(78px, auto);
+}
+
+.label,
+.hint,
+.inline-check span {
+  line-height: var(--ctl-h);
+}
+
+.hint {
+  text-align: left;
+  white-space: nowrap;
+}
+
+.inline-check {
+  display: grid;
+  grid-template-columns: 20px auto;
+  align-items: center;
+  column-gap: 8px;
+  min-height: var(--ctl-h);
+}
+
+.toggle-group {
+  min-width: 190px;
+}
+
+.inline-check input {
+  width: 20px;
+  height: 20px;
+}
+
+.btn-mini {
+  height: var(--ctl-h);
+  min-width: var(--ctl-h);
+  line-height: calc(var(--ctl-h) - 2px);
+  padding: 0;
+  border-radius: var(--ctl-radius);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.field input[type="number"] {
+  height: var(--ctl-h);
+  border-radius: var(--ctl-radius);
+  padding: 0 8px;
+  box-sizing: border-box;
+}
+
+#quitBtn {
+  height: var(--ctl-h);
+  line-height: calc(var(--ctl-h) - 2px);
+  padding: 0 14px;
+  align-self: center;
+}
+
+/* hide number spinners */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+
+@media (max-width: 1500px) {
+  .actions {
+    grid-auto-flow: row;
+    justify-content: stretch;
+  }
 }

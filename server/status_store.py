@@ -56,7 +56,21 @@ class StatusStore:
       - The store accepts arbitrary payload dicts but normalizes at read time.
     """
 
-    def __init__(self, history_seconds: float, *, grid_rows: int, grid_cols: int, show_tile_numbers: bool = True) -> None:
+    def __init__(
+        self,
+        history_seconds: float,
+        *,
+        grid_rows: int,
+        grid_cols: int,
+        show_tile_numbers: bool = True,
+        show_overlay_state: bool = False,
+        region_x: int = 0,
+        region_y: int = 0,
+        region_width: int = 640,
+        region_height: int = 480,
+        monitors: list[dict[str, int]] | None = None,
+        current_monitor_id: int = 0,
+    ) -> None:
         self._history_seconds = float(history_seconds)
         self._lock = threading.Lock()
 
@@ -80,6 +94,15 @@ class StatusStore:
 
         # Single source of truth for tile-number visibility across overlay + heatmap.
         self._show_tile_numbers = bool(show_tile_numbers)
+        self._show_overlay_state = bool(show_overlay_state)
+
+        self._region_x = int(region_x)
+        self._region_y = int(region_y)
+        self._region_width = max(1, int(region_width))
+        self._region_height = max(1, int(region_height))
+
+        self._monitors = [dict(m) for m in (monitors or []) if isinstance(m, dict)]
+        self._current_monitor_id = int(current_monitor_id)
 
         # 0-based tile indices disabled via web UI clicks.
         self._disabled_tiles: list[int] = []
@@ -294,9 +317,69 @@ class StatusStore:
         with self._lock:
             return {
                 "show_tile_numbers": bool(self._show_tile_numbers),
+                "show_overlay_state": bool(self._show_overlay_state),
                 "grid_rows": int(self._grid_rows),
                 "grid_cols": int(self._grid_cols),
+                "region_x": int(self._region_x),
+                "region_y": int(self._region_y),
+                "region_width": int(self._region_width),
+                "region_height": int(self._region_height),
+                "current_state": self._current_state_locked(),
+                "monitors": [dict(m) for m in self._monitors],
+                "current_monitor_id": int(self._current_monitor_id),
             }
+
+    def set_show_overlay_state(self, enabled: bool) -> None:
+        with self._lock:
+            self._show_overlay_state = bool(enabled)
+
+    def set_region(self, *, x: int, y: int, width: int, height: int) -> None:
+        with self._lock:
+            self._region_x = int(x)
+            self._region_y = int(y)
+            self._region_width = max(1, int(width))
+            self._region_height = max(1, int(height))
+
+            cx = self._region_x + max(1, self._region_width) // 2
+            cy = self._region_y + max(1, self._region_height) // 2
+            for m in self._monitors:
+                mid = int(m.get("id", 0))
+                if mid <= 0:
+                    continue
+                left = int(m.get("left", 0))
+                top = int(m.get("top", 0))
+                width_m = int(m.get("width", 0))
+                height_m = int(m.get("height", 0))
+                if left <= cx < left + width_m and top <= cy < top + height_m:
+                    self._current_monitor_id = mid
+                    break
+
+    def get_region(self) -> tuple[int, int, int, int]:
+        with self._lock:
+            return (int(self._region_x), int(self._region_y), int(self._region_width), int(self._region_height))
+
+    def set_monitors(self, monitors: list[dict[str, int]]) -> None:
+        with self._lock:
+            self._monitors = [dict(m) for m in monitors if isinstance(m, dict)]
+
+    def set_current_monitor_id(self, monitor_id: int) -> None:
+        with self._lock:
+            self._current_monitor_id = int(monitor_id)
+
+    def _current_state_locked(self) -> str:
+        payload = self._latest
+        if isinstance(payload, dict):
+            video = payload.get("video")
+            if isinstance(video, dict):
+                state = video.get("state")
+                if isinstance(state, str) and state.strip():
+                    return state.strip()
+            overall = payload.get("overall")
+            if isinstance(overall, dict):
+                state = overall.get("state")
+                if isinstance(state, str) and state.strip():
+                    return state.strip()
+        return "UNKNOWN"
 
     def set_grid(self, *, rows: int, cols: int) -> None:
         with self._lock:

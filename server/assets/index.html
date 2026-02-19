@@ -11,49 +11,73 @@
   <header>
     <h1>motiondetector</h1>
     <div class="actions">
-      <label class="toggle" title="Show numbers on the selector overlay grid">
-        <input id="toggleTileNumbers" type="checkbox" />
-        <span>Tile numbers</span>
-      </label>
-      <label class="toggle" title="Change grid at runtime">
-        <span>Grid</span>
-        <input id="gridRows" type="number" min="1" style="width:56px" />
-        <span>x</span>
-        <input id="gridCols" type="number" min="1" style="width:56px" />
-        <button id="applyGrid">Apply</button>
-      </label>
-      <button id="copyJson">Copy JSON</button>
+      <div class="toggle control-group" title="Grid size">
+        <div class="rowline">
+          <div class="field field-with-hint">
+            <span class="label">Grid X</span>
+            <button id="gridColsMinus" class="btn-mini">−</button>
+            <input id="gridCols" type="number" min="1" />
+            <button id="gridColsPlus" class="btn-mini">+</button>
+            <span class="hint">(columns)</span>
+          </div>
+        </div>
+        <div class="rowline">
+          <div class="field field-with-hint">
+            <span class="label">Grid W</span>
+            <button id="gridRowsMinus" class="btn-mini">−</button>
+            <input id="gridRows" type="number" min="1" />
+            <button id="gridRowsPlus" class="btn-mini">+</button>
+            <span class="hint">(rows)</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="toggle control-group" title="Overlay position and size">
+        <div class="rowline rowline-dual">
+          <div class="field">
+            <span class="label">X</span>
+            <button id="regionXMinus" class="btn-mini">−</button>
+            <input id="regionX" type="number" />
+            <button id="regionXPlus" class="btn-mini">+</button>
+            <span class="hint">&nbsp;</span>
+          </div>
+          <div class="field">
+            <span class="label">Y</span>
+            <button id="regionYMinus" class="btn-mini">−</button>
+            <input id="regionY" type="number" />
+            <button id="regionYPlus" class="btn-mini">+</button>
+            <span class="hint">&nbsp;</span>
+          </div>
+        </div>
+        <div class="rowline rowline-dual">
+          <div class="field">
+            <span class="label">W</span>
+            <button id="regionWMinus" class="btn-mini">−</button>
+            <input id="regionW" type="number" min="1" />
+            <button id="regionWPlus" class="btn-mini">+</button>
+            <span class="hint">&nbsp;</span>
+          </div>
+          <div class="field">
+            <span class="label">H</span>
+            <button id="regionHMinus" class="btn-mini">−</button>
+            <input id="regionH" type="number" min="1" />
+            <button id="regionHPlus" class="btn-mini">+</button>
+            <span class="hint">&nbsp;</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="toggle control-group toggle-group" title="Overlay options">
+        <label class="inline-check"><input id="toggleTileNumbers" type="checkbox" /><span>Tile numbers</span></label>
+        <label class="inline-check"><input id="toggleOverlayState" type="checkbox" /><span>Overlay state</span></label>
+      </div>
+
       <button id="quitBtn">Quit</button>
     </div>
+    <div class="subtle" id="monitorInfo">monitor: —</div>
   </header>
 
   <div class="grid dashboard-grid">
-    <section class="panel panel-json">
-      <h2><span>Status JSON</span><span class="subtle" id="tsLabel">—</span></h2>
-
-      <div class="pillrow">
-        <span class="pill" id="pillVideo">video: —</span>
-        <span class="pill" id="pillMean">motion_mean: —</span>
-        <span class="pill" id="pillOverall">overall: —</span>
-      </div>
-
-      <pre id="jsonBox">{}</pre>
-    </section>
-
-    <section class="panel panel-motion">
-      <h2><span>Motion mean (last {{HISTORY_SECONDS}}s)</span></h2>
-      <div class="chartwrap">
-        <canvas id="chart" width="900" height="540"></canvas>
-      </div>
-    </section>
-
-    <section class="panel panel-audio">
-      <h2><span>Audio peak % (last {{HISTORY_SECONDS}}s)</span></h2>
-      <div class="chartwrap">
-        <canvas id="audioChart" width="900" height="540"></canvas>
-      </div>
-    </section>
-
     <section class="panel panel-heatmap">
       <h2><span>Tiles heatmap (0 → 1)</span></h2>
       <div class="heatwrap">
@@ -61,6 +85,39 @@
       </div>
       <div class="subtle" id="gridLabel" style="margin-top:10px;">grid: —</div>
       <div class="subtle" style="margin-top:6px;">Click a tile to disable/enable it (disabled tiles are excluded from measurements).</div>
+    </section>
+
+    <section class="panel panel-json">
+      <h2>
+        <span>Status JSON</span>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="subtle" id="tsLabel">—</span>
+          <button id="copyJson" class="btn-mini">Copy JSON</button>
+        </div>
+      </h2>
+
+      <div class="pillrow">
+        <span class="pill" id="pillVideo">video: —</span>
+        <span class="pill" id="pillMean">motion_mean: —</span>
+        <span class="pill" id="pillAudioPeak">audio peak: —</span>
+        <span class="pill" id="pillOverall">overall: —</span>
+      </div>
+
+      <pre id="jsonBox">{}</pre>
+    </section>
+
+    <section class="panel panel-motion">
+      <h2><span>Motion mean + peak (last {{HISTORY_SECONDS}}s)</span></h2>
+      <div class="chartwrap">
+        <canvas id="chart" width="900" height="300"></canvas>
+      </div>
+    </section>
+
+    <section class="panel panel-audio">
+      <h2><span>Audio peak % (last {{HISTORY_SECONDS}}s)</span></h2>
+      <div class="chartwrap">
+        <canvas id="audioChart" width="900" height="300"></canvas>
+      </div>
     </section>
   </div>
 

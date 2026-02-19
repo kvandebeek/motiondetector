@@ -27,9 +27,11 @@ def run_selector_ui(
     emit_inset_px: int = 10,
     tile_label_text_color: str = "#FFFFFF",
     show_tile_numbers: bool = True,
+    show_overlay_state: bool = False,
     server_base_url_override: Optional[str] = None,
     tiles_poll_ms: int = 500,
     http_timeout_sec: float = 0.35,
+    on_window_geometry_change: Optional[Callable[[int, int, int, int], None]] = None,
     on_window_ready: Optional[Callable[[QApplication, SelectorWindow], None]] = None,
 ) -> None:
     """
@@ -68,12 +70,14 @@ def run_selector_ui(
         emit_inset_px=int(emit_inset_px),
         tile_label_text_color=str(tile_label_text_color),
         show_tile_numbers=bool(show_tile_numbers),
+        show_overlay_state=bool(show_overlay_state),
         tiles_sync=tiles_sync,
         tiles_poll_ms=int(tiles_poll_ms),
         http_timeout_sec=float(http_timeout_sec),
         chrome_bar_h_px=45,
         ui_settings_url=ui_settings_url,
         ui_poll_ms=250,
+        on_window_geometry_change=on_window_geometry_change,
     )
     w.show()
 

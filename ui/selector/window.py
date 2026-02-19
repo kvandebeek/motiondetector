@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Callable, Optional
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtGui import QColor, QPainter, QPen, QMoveEvent, QResizeEvent
 from PySide6.QtWidgets import QApplication, QWidget
 
 from analyzer.capture import Region
@@ -19,7 +19,7 @@ from ui.selector.grid import GridGeometry
 from ui.selector.interaction import InteractionConfig, SelectorInteractor
 from ui.selector.paint import PaintConfig, SelectorPainter
 from ui.selector.region_emit import RegionEmitter
-from ui.selector.ui_settings import UiSettingsPoller
+from ui.selector.ui_settings import UiSettingsPoller, UiSettingsSnapshot
 from ui.tiles_sync import TilesSync
 from ui.selector.models import UiRegion
 
@@ -58,20 +58,25 @@ class SelectorWindow(QWidget):
         emit_inset_px: int,
         tile_label_text_color: str,
         show_tile_numbers: bool,
+        show_overlay_state: bool = False,
         tiles_sync: TilesSync,
         tiles_poll_ms: int,
         http_timeout_sec: float,
         chrome_bar_h_px: int = 20,
         ui_settings_url: Optional[str] = None,
         ui_poll_ms: int = 250,
+        on_window_geometry_change: Optional[Callable[[int, int, int, int], None]] = None,
     ) -> None:
         super().__init__()
 
         # External callback invoked when the window is closed (by user or program).
         self._on_close = on_close
+        self._on_window_geometry_change = on_window_geometry_change
 
         # Local visual state; can be updated by UiSettingsPoller or programmatically.
         self._show_tile_numbers = bool(show_tile_numbers)
+        self._show_overlay_state = bool(show_overlay_state)
+        self._current_state = "UNKNOWN"
 
         # External tiles sync object (polls /tiles and exposes disabled_tiles set).
         self._tiles_sync = tiles_sync
@@ -156,6 +161,7 @@ class SelectorWindow(QWidget):
         if url:
             p = UiSettingsPoller(url=url, poll_ms=int(ui_poll_ms), timeout_sec=float(http_timeout_sec), parent=self)
             p.valueChanged.connect(self.set_show_tile_numbers)  # type: ignore[arg-type]
+            p.settingsChanged.connect(self.apply_ui_settings)  # type: ignore[arg-type]
             self._ui_poller = p
 
         # Window chrome/flags: frameless + always-on-top tool window, transparent background.
@@ -172,6 +178,7 @@ class SelectorWindow(QWidget):
 
         # Apply initial geometry and emit initial region right away.
         self.setGeometry(initial.x, initial.y, initial.width, initial.height)
+        self._notify_geometry_changed()
         self._region_emitter.emit(reason="init")
 
         # Local import avoids a module-level dependency chain in some setups.
@@ -201,6 +208,65 @@ class SelectorWindow(QWidget):
             return
         self._show_tile_numbers = v
         self.update()
+
+
+
+    def _apply_grid_size(self, *, rows: int, cols: int) -> None:
+        rr = max(1, int(rows))
+        cc = max(1, int(cols))
+        try:
+            object.__setattr__(self._grid, "grid_rows", rr)
+            object.__setattr__(self._grid, "grid_cols", cc)
+            object.__setattr__(self._painter._cfg, "grid_rows", rr)
+            object.__setattr__(self._painter._cfg, "grid_cols", cc)
+        except Exception:
+            return
+
+    def apply_ui_settings(self, snapshot: object) -> None:
+        if not isinstance(snapshot, UiSettingsSnapshot):
+            return
+        self.set_show_tile_numbers(bool(snapshot.show_tile_numbers))
+        self._show_overlay_state = bool(snapshot.show_overlay_state)
+        self._current_state = str(snapshot.current_state or "UNKNOWN")
+        self._apply_grid_size(rows=int(snapshot.grid_rows), cols=int(snapshot.grid_cols))
+
+        try:
+            # Avoid snapping while the user is actively dragging/resizing the overlay.
+            if self._interact.is_dragging:
+                self.update()
+                return
+
+            gx = int(self.x())
+            gy = int(self.y())
+            gw = int(self.width())
+            gh = int(self.height())
+            if (
+                gx != int(snapshot.region_x)
+                or gy != int(snapshot.region_y)
+                or gw != int(snapshot.region_width)
+                or gh != int(snapshot.region_height)
+            ):
+                self.setGeometry(
+                    int(snapshot.region_x),
+                    int(snapshot.region_y),
+                    int(snapshot.region_width),
+                    int(snapshot.region_height),
+                )
+                self._notify_geometry_changed()
+                self._region_emitter.emit(reason="ui-sync")
+        except Exception:
+            pass
+
+        self.update()
+
+    def _notify_geometry_changed(self) -> None:
+        cb = self._on_window_geometry_change
+        if cb is None:
+            return
+        try:
+            cb(int(self.x()), int(self.y()), int(self.width()), int(self.height()))
+        except Exception:
+            pass
 
     def _handle_close(self) -> None:
         """
@@ -236,6 +302,12 @@ class SelectorWindow(QWidget):
         except Exception:
             pass
         return screen_name, screen_logical, screen_phys
+
+    def moveEvent(self, event: QMoveEvent) -> None:  # type: ignore[override]
+        _ = event
+
+    def resizeEvent(self, event: QResizeEvent) -> None:  # type: ignore[override]
+        _ = event
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         """
@@ -273,6 +345,8 @@ class SelectorWindow(QWidget):
             y_edges=y_edges,
             show_tile_numbers=self._show_tile_numbers,
             disabled_tiles=set(self._tiles_sync.disabled_tiles),
+            show_overlay_state=self._show_overlay_state,
+            current_state=self._current_state,
         )
 
     def mousePressEvent(self, event) -> None:  # type: ignore[override]
@@ -319,6 +393,7 @@ class SelectorWindow(QWidget):
         """
         _ = event
         self._interact.on_mouse_release()
+        self._notify_geometry_changed()
 
     def _poll_tiles(self) -> None:
         """

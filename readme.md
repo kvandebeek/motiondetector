@@ -26,7 +26,7 @@ Optional: record short clips based on motion state.
 - Computes:
   - `motion_mean` (overall motion score)
   - per-tile motion values (row-major list matching the configured grid)
-  - a simple motion state machine: `NO_MOTION`, `LOW_ACTIVITY`, `MOTION`
+  - motion+audio states (`NO_MOTION_WITH_AUDIO`, `NO_MOTION_NO_AUDIO`, etc.) and fallback `*_NOSOUNDHARDWARE` when loopback capture is unavailable
 - Supports an **analysis inset** to ignore borders/shadows that cause noisy diffs.
 
 ### Server API + dashboard
@@ -118,7 +118,7 @@ Current config structure (high-level):
   - grid (`grid_rows`, `grid_cols`)
   - history retention (`history_seconds`)
 - `recording.*` (optional)
-- `ui.*` (initial region + visuals)
+- `ui.*` (initial region + visuals + `show_tile_numbers`)
 
 Tip: keep `grid_rows`/`grid_cols` reasonable; very large grids increase CPU cost and UI clutter.
 
@@ -154,6 +154,7 @@ Base URL is typically:
   Request graceful shutdown
 
 ### Payload notes
+- `audio` is included with `available`, `left`, `right`, and `reason` (`left/right` are 0..100).
 - Tiles are a single ordered list (row-major).
 - Disabled tiles are represented as:
   - indices in `disabled_tiles`

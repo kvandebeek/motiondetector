@@ -37,7 +37,7 @@ class FrameOut:
     phase_name: str
     scene_time_s: float
     ema_activity: float
-    expected_state: str  # "NO_MOTION" | "LOW_ACTIVITY" | "MOTION"
+    expected_state: str
     subtitle: Optional[SubtitleOverlay] = None
 
 
@@ -327,32 +327,32 @@ class TestDataEngine:
 
     def _expected_state(self, idx1: int) -> str:
         if idx1 == 1:
-            return "NO_MOTION"
+            return "NO_MOTION_NOSOUNDHARDWARE"
         if idx1 == 2:
-            return "LOW_ACTIVITY"
+            return "LOW_ACTIVITY_NOSOUNDHARDWARE"
         if idx1 == 3:
-            return "MOTION"
+            return "MOTION_NOSOUNDHARDWARE"
         if idx1 == 4:
             p = int(self._scene_t // (self._durations[self._scene0] / 3.0)) % 3
-            return "NO_MOTION" if p == 0 else "LOW_ACTIVITY" if p == 1 else "MOTION"
+            return "NO_MOTION_NOSOUNDHARDWARE" if p == 0 else "LOW_ACTIVITY_NOSOUNDHARDWARE" if p == 1 else "MOTION_NOSOUNDHARDWARE"
         if idx1 in (5, 6, 7, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18):
-            return "LOW_ACTIVITY"
+            return "LOW_ACTIVITY_NOSOUNDHARDWARE"
         if idx1 == 8:
-            return "MOTION"
+            return "MOTION_NOSOUNDHARDWARE"
 
         if idx1 == 19:
-            return "NO_MOTION"
+            return "NO_MOTION_NOSOUNDHARDWARE"
         if idx1 in (20, 21, 22, 23, 24, 25, 27, 29, 30):
-            return "LOW_ACTIVITY"
+            return "LOW_ACTIVITY_NOSOUNDHARDWARE"
         if idx1 == 26:
             per = float(self._cut_period_s())
             cut_i = int(self._scene_t // per)
             within = float(self._scene_t - (cut_i * per))
-            return "MOTION" if within < self._cut_spike_s() else "NO_MOTION"
+            return "MOTION_NOSOUNDHARDWARE" if within < self._cut_spike_s() else "NO_MOTION_NOSOUNDHARDWARE"
         if idx1 == 28:
-            return "MOTION"
+            return "MOTION_NOSOUNDHARDWARE"
 
-        return "LOW_ACTIVITY"
+        return "LOW_ACTIVITY_NOSOUNDHARDWARE"
 
     # ---------------- scene init ----------------
 

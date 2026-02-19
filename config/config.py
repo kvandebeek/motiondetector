@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+from pathlib import Path
 from typing import Any, Dict
 
 
@@ -104,6 +105,7 @@ class AppConfig:
     initial_region: Dict[str, int]
     border_px: int
     grid_line_px: int
+    show_tile_numbers: bool
 
 
 def _require_obj(raw: Dict[str, Any], key: str) -> Dict[str, Any]:
@@ -308,6 +310,7 @@ def load_config(path: str) -> AppConfig:
     # UI drawing parameters in pixels.
     border_px = int(_require_num(ui.get("border_px"), "ui.border_px"))
     grid_line_px = int(_require_num(ui.get("grid_line_px"), "ui.grid_line_px"))
+    show_tile_numbers = _opt_bool(ui.get("show_tile_numbers"), "ui.show_tile_numbers", True)
 
     # Construct immutable config used throughout the application.
     return AppConfig(
@@ -334,4 +337,40 @@ def load_config(path: str) -> AppConfig:
         initial_region=initial_region,
         border_px=border_px,
         grid_line_px=grid_line_px,
+        show_tile_numbers=show_tile_numbers,
     )
+
+
+def patch_runtime_ui_motion_config(
+    path: str,
+    *,
+    show_tile_numbers: bool | None = None,
+    grid_rows: int | None = None,
+    grid_cols: int | None = None,
+) -> None:
+    """Persist runtime-updated UI/motion settings into config.json."""
+    p = Path(path)
+    raw: Dict[str, Any]
+    with p.open("r", encoding="utf-8") as f:
+        raw = json.load(f)
+
+    ui = raw.get("ui")
+    if not isinstance(ui, dict):
+        ui = {}
+        raw["ui"] = ui
+
+    motion = raw.get("motion")
+    if not isinstance(motion, dict):
+        motion = {}
+        raw["motion"] = motion
+
+    if show_tile_numbers is not None:
+        ui["show_tile_numbers"] = bool(show_tile_numbers)
+    if grid_rows is not None:
+        motion["grid_rows"] = max(1, int(grid_rows))
+    if grid_cols is not None:
+        motion["grid_cols"] = max(1, int(grid_cols))
+
+    with p.open("w", encoding="utf-8") as f:
+        json.dump(raw, f, indent=2)
+        f.write("\n")

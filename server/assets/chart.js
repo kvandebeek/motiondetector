@@ -1,6 +1,8 @@
+// File commentary: server/assets/chart.js - This file contains browser-side behavior for the project.
 // server/assets/chart.js
 import { clamp01 } from './utils.js';
 
+// drawChart keeps this part of the interface easy to understand and use.
 export function drawChart(canvas, historyPayloads) {
   drawSeriesChart({
     canvas,
@@ -17,6 +19,7 @@ export function drawChart(canvas, historyPayloads) {
   });
 }
 
+// drawAudioChart keeps this part of the interface easy to understand and use.
 export function drawAudioChart(canvas, historyPayloads) {
   drawSeriesChart({
     canvas,
@@ -33,6 +36,7 @@ export function drawAudioChart(canvas, historyPayloads) {
   });
 }
 
+// drawSeriesChart keeps this part of the interface easy to understand and use.
 function drawSeriesChart({ canvas, historyPayloads, mapper, emptyText, meanColor, peakColor, yLabelTop, yLabelBottom }) {
   const ctx = canvas?.getContext?.('2d');
   if (!ctx) return;
@@ -95,6 +99,7 @@ function drawSeriesChart({ canvas, historyPayloads, mapper, emptyText, meanColor
   const tMax = pts[pts.length - 1].t;
   const tSpan = Math.max(1e-6, tMax - tMin);
 
+// drawLine keeps this part of the interface easy to understand and use.
   const drawLine = (key, color) => {
     ctx.strokeStyle = color;
     ctx.lineWidth = 2;

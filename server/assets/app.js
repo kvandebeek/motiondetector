@@ -1,3 +1,4 @@
+// File commentary: server/assets/app.js - This file contains browser-side behavior for the project.
 // server/assets/app.js
 import {
   STATUS_URL,
@@ -65,16 +66,19 @@ let numericInitialized = false;
 let updatingGrid = false;
 let updatingRegion = false;
 
+// n keeps this part of the interface easy to understand and use.
 function n(v, fallback = 0) {
   const x = Number(v);
   return Number.isFinite(x) ? x : fallback;
 }
 
+// toPosInt keeps this part of the interface easy to understand and use.
 function toPosInt(v, fallback = 1) {
   const x = Math.round(n(v, fallback));
   return x > 0 ? x : fallback;
 }
 
+// setToggleCheckedFromServer keeps this part of the interface easy to understand and use.
 function setToggleCheckedFromServer(value) {
   const v = Boolean(value);
   lastShowTileNumbers = v;
@@ -84,6 +88,7 @@ function setToggleCheckedFromServer(value) {
   suppressToggleHandler = false;
 }
 
+// setOverlayToggleCheckedFromServer keeps this part of the interface easy to understand and use.
 function setOverlayToggleCheckedFromServer(value) {
   const v = Boolean(value);
   lastShowOverlayState = v;
@@ -93,6 +98,7 @@ function setOverlayToggleCheckedFromServer(value) {
   suppressOverlayToggleHandler = false;
 }
 
+// statusForDisplay keeps this part of the interface easy to understand and use.
 function statusForDisplay(payload) {
   const tiles = payload?.video?.tiles;
   if (!Array.isArray(tiles)) return payload;
@@ -105,6 +111,7 @@ function statusForDisplay(payload) {
   };
 }
 
+// renderMonitorInfo keeps this part of the interface easy to understand and use.
 function renderMonitorInfo(ui) {
   if (!monitorInfo) return;
   const monitors = Array.isArray(ui?.monitors) ? ui.monitors : [];
@@ -123,6 +130,7 @@ function renderMonitorInfo(ui) {
   monitorInfo.textContent = `monitor: ${id} (${left},${top}) ${width}x${height}`;
 }
 
+// applyUiValues keeps this part of the interface easy to understand and use.
 function applyUiValues(ui, { initOnly = false } = {}) {
   if (!ui || typeof ui !== 'object') return;
 
@@ -146,6 +154,7 @@ function applyUiValues(ui, { initOnly = false } = {}) {
 
 
 
+// setVideoStateTone keeps this part of the interface easy to understand and use.
 function setVideoStateTone(videoState, overallState) {
   if (!pillVideo) return;
   pillVideo.classList.remove('pill-state-ok', 'pill-state-warn', 'pill-state-alert');
@@ -166,6 +175,7 @@ function setVideoStateTone(videoState, overallState) {
   }
 }
 
+// renderStatus keeps this part of the interface easy to understand and use.
 function renderStatus(payload) {
   tsLabel.textContent = fmtTime(payload.timestamp);
 
@@ -256,6 +266,7 @@ async function submitRegion() {
   }
 }
 
+// adjustNumberInput keeps this part of the interface easy to understand and use.
 function adjustNumberInput(input, delta, min = null) {
   if (!input) return;
   const next = Math.round(n(input.value, 0) + delta);

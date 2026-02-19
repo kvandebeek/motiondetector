@@ -1,3 +1,4 @@
+# File commentary: testdata/logger.py - This file holds logic used by the motion detector project.
 # testdata/logger.py
 from __future__ import annotations
 
@@ -39,6 +40,7 @@ class TestDataLogRow:
 
 class TestDataLogger:
     def __init__(self, *, log_dir: str = "./testdata_logs") -> None:
+        """Initialize this object with the provided inputs and prepare its internal state."""
         d = Path(log_dir)
         d.mkdir(parents=True, exist_ok=True)
 
@@ -71,9 +73,11 @@ class TestDataLogger:
 
     @property
     def path_str(self) -> str:
+        """Handle path str for this module."""
         return str(self._path)
 
     def write(self, row: TestDataLogRow) -> None:
+        """Write one record to the output destination used by this component."""
         if(row.actual_state != row.expected_state):
             self._w.writerow(
                 [
@@ -98,6 +102,7 @@ class TestDataLogger:
             self._fh.flush()
 
     def close(self) -> None:
+        """Close open resources so files/handles are safely released."""
         try:
             self._fh.flush()
         finally:

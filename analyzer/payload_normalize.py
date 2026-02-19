@@ -1,3 +1,4 @@
+# File commentary: analyzer/payload_normalize.py - This file holds logic used by the motion detector project.
 from __future__ import annotations
 
 """

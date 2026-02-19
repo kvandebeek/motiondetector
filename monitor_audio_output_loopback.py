@@ -1,3 +1,4 @@
+# File commentary: monitor_audio_output_loopback.py - This file holds logic used by the motion detector project.
 from __future__ import annotations
 
 import argparse
@@ -10,11 +11,13 @@ import pyaudiowpatch as pyaudio
 
 
 def rms_value(x: np.ndarray) -> float:
+    """Handle rms value for this module."""
     y = x.astype(np.float32)
     return float(np.sqrt(np.mean(y * y)))
 
 
 def main(argv: Optional[list[str]] = None) -> int:
+    """Run the main application flow and return an exit code for the process."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--device-index", type=int, required=True, help="Loopback device index (e.g. 13 or 14).")
     parser.add_argument("--samplerate", type=int, default=48_000)

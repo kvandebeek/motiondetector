@@ -1,3 +1,4 @@
+# File commentary: analyzer/recorder.py - This file holds logic used by the motion detector project.
 # analyzer/recorder.py
 from __future__ import annotations
 
@@ -63,6 +64,7 @@ class ClipRecorder:
     """
 
     def __init__(self, cfg: RecorderConfig) -> None:
+        """Initialize this object with the provided inputs and prepare its internal state."""
         self._cfg = cfg
 
         # Active OpenCV writer when recording; None when idle.
@@ -247,6 +249,7 @@ class ClipRecorder:
         return writer
 
     def _state_matches_trigger(self, state: str) -> bool:
+        """Handle state matches trigger for this module."""
         s = str(state)
         trig = str(self._cfg.trigger_state)
         if s == trig:

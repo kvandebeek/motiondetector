@@ -1,3 +1,4 @@
+# File commentary: testdata/profile.py - This file holds logic used by the motion detector project.
 # testdata/profile.py
 from __future__ import annotations
 
@@ -15,6 +16,7 @@ class TestDataProfile:
 
     @staticmethod
     def from_name(name: ProfileName) -> "TestDataProfile":
+        """Handle from name for this module."""
         n = name.lower().strip()
         if n == "fast":
             return TestDataProfile(

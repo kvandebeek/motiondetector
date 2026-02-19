@@ -1,3 +1,4 @@
+# File commentary: main.py - This file holds logic used by the motion detector project.
 """Application composition root for the motion detector runtime.
 
 This module wires together all subsystems:
@@ -53,6 +54,7 @@ class SharedRegion:
 
 
 def _parse_args() -> argparse.Namespace:
+    """Parse args and return normalized values for downstream code."""
     p = argparse.ArgumentParser(prog="motiondetector")
     g = p.add_mutually_exclusive_group()
     g.add_argument("--testdata", action="store_true", help="Run testdata trainer (default profile).")
@@ -183,6 +185,7 @@ def main() -> int:
             shared.region = r
 
     def on_window_geometry_change(x: int, y: int, width: int, height: int) -> None:
+        """Handle on window geometry change for this module."""
         region_for_ui = Region(x=int(x), y=int(y), width=max(1, int(width)), height=max(1, int(height)))
         try:
             store.set_region(
@@ -296,6 +299,7 @@ def main() -> int:
     threading.Thread(target=quit_watcher, name="quit-watcher", daemon=True).start()
 
     def on_window_ready(app, selector_window) -> None:
+        """Handle on window ready for this module."""
         profile = "default"
         if bool(args.testdata_fast):
             profile = "fast"

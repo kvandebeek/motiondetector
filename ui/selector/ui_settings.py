@@ -1,3 +1,4 @@
+# File commentary: ui/selector/ui_settings.py - This file holds logic used by the motion detector project.
 # ui/selector_ui_settings.py
 from __future__ import annotations
 
@@ -50,18 +51,21 @@ class UiSettingsPoller(QObject):
         self._timer.timeout.connect(self.poll)  # type: ignore[arg-type]
 
     def start(self) -> None:
+        """Start background work for this component so it can begin producing updates."""
         if not self._url:
             return
         self._timer.start()
         self.poll()
 
     def stop(self) -> None:
+        """Request a clean shutdown for this component and stop ongoing background work."""
         try:
             self._timer.stop()
         except Exception:
             pass
 
     def poll(self) -> None:
+        """Fetch the latest remote/local values and apply them to current UI state."""
         if not self._url:
             return
 
@@ -74,6 +78,7 @@ class UiSettingsPoller(QObject):
         timeout_sec = self._timeout_sec
 
         def worker() -> None:
+            """Run the background worker loop that performs periodic sync work."""
             try:
                 req = Request(url=url, method="GET", headers={"Cache-Control": "no-store"})
                 with urlopen(req, timeout=timeout_sec) as resp:

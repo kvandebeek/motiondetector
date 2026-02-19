@@ -1,3 +1,4 @@
+// File commentary: server/assets/heatmap.js - This file contains browser-side behavior for the project.
 // server/assets/heatmap.js
 import { clamp01, colorFor01, edges, inferSquareGridFromTiles } from './utils.js';
 
@@ -13,6 +14,7 @@ import { clamp01, colorFor01, edges, inferSquareGridFromTiles } from './utils.js
  * Inputs:
  * - region is expected to contain { width, height } in pixels (capture space).
  */
+// resizeHeatmapCanvas keeps this part of the interface easy to understand and use.
 export function resizeHeatmapCanvas(canvas, region) {
   const wrap = canvas.parentElement;
   if (!wrap) return;
@@ -52,6 +54,7 @@ export function resizeHeatmapCanvas(canvas, region) {
  * - Light wash to de-emphasize tile
  * - Dark X to clearly communicate disabled/ignored region
  */
+// drawDisabledOverlay keeps this part of the interface easy to understand and use.
 export function drawDisabledOverlay(ctx, x0, y0, w, h) {
   ctx.fillStyle = 'rgba(255,255,255,0.65)';
   ctx.fillRect(x0, y0, w, h);
@@ -74,6 +77,7 @@ export function drawDisabledOverlay(ctx, x0, y0, w, h) {
  * - Font size adapts to tile dimensions so dense grids remain readable.
  * - Uses a stroke + fill to stay visible on both dark and bright heatmap colors.
  */
+// drawTileNumber keeps this part of the interface easy to understand and use.
 function drawTileNumber(ctx, x0, y0, ww, hh, idx) {
   const label = String(idx + 1); // 1-based
 
@@ -107,6 +111,7 @@ function drawTileNumber(ctx, x0, y0, ww, hh, idx) {
  * - Some UI views render "disabled" as a string (display transformation).
  * - disabledTilesSet is the local/server mask for interactive toggling.
  */
+// isTileDisabled keeps this part of the interface easy to understand and use.
 export function isTileDisabled(raw, idx, disabledTilesSet) {
   return raw === null || raw === undefined || raw === 'disabled' || disabledTilesSet.has(idx);
 }
@@ -121,6 +126,7 @@ export function isTileDisabled(raw, idx, disabledTilesSet) {
  * If grid is missing or inconsistent with tile count, attempts to infer a square-ish grid
  * from the number of tiles (e.g., 9 => 3x3, 16 => 4x4).
  */
+// getGridAndTiles keeps this part of the interface easy to understand and use.
 export function getGridAndTiles(payload) {
   const tiles = payload?.video?.tiles ?? payload?.tiles ?? [];
   const grid = payload?.video?.grid ?? payload?.grid ?? { rows: 0, cols: 0 };
@@ -155,6 +161,7 @@ export function getGridAndTiles(payload) {
  * - payload: latest status payload from /status (preferred) or compatible shape
  * - disabledTilesSet: current set of disabled tile indices (0-based)
  */
+// drawTilesHeatmap keeps this part of the interface easy to understand and use.
 export function drawTilesHeatmap({ canvas, gridLabelEl, payload, disabledTilesSet }) {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
@@ -257,6 +264,7 @@ export function drawTilesHeatmap({ canvas, gridLabelEl, payload, disabledTilesSe
  *   which distributes rounding error; this click mapping is close enough for user interaction.
  *   If you ever need pixel-perfect mapping, reuse the same edges() logic with rect width/height.
  */
+// tileIndexFromCanvasClick keeps this part of the interface easy to understand and use.
 export function tileIndexFromCanvasClick(canvas, rows, cols, ev) {
   const rect = canvas.getBoundingClientRect();
   const x = ev.clientX - rect.left;

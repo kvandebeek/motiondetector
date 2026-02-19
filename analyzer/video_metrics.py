@@ -1,3 +1,4 @@
+# File commentary: analyzer/video_metrics.py - This file holds logic used by the motion detector project.
 from __future__ import annotations
 
 from typing import Dict, List, Optional, Tuple
@@ -30,6 +31,7 @@ class VideoMetrics:
     """
 
     def __init__(self, diff_threshold: float = 0.02) -> None:
+        """Initialize this object with the provided inputs and prepare its internal state."""
         # Previous grayscale frame (uint8). None until the first frame is processed.
         self._prev_gray: Optional[np.ndarray] = None
 

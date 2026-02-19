@@ -1,3 +1,4 @@
+# File commentary: analyzer/audio_meter.py - This file holds logic used by the motion detector project.
 """Best-effort audio level meter using Windows loopback (PyAudioWPatch) or WASAPI sessions (pycaw)."""
 from __future__ import annotations
 
@@ -73,6 +74,7 @@ class AudioMeter:
         self._thread: Optional[threading.Thread] = None
 
     def start(self) -> None:
+        """Start background work for this component so it can begin producing updates."""
         if self._thread is not None and self._thread.is_alive():
             return
         self._stop.clear()
@@ -80,13 +82,16 @@ class AudioMeter:
         self._thread.start()
 
     def stop(self) -> None:
+        """Request a clean shutdown for this component and stop ongoing background work."""
         self._stop.set()
 
     def get_level(self) -> AudioLevel:
+        """Return the current level value for callers."""
         with self._lock:
             return AudioLevel(self._available, self._left, self._right, self._detected, self._reason)
 
     def _set(self, *, available: bool, left: float, right: float, detected: bool, reason: str) -> None:
+        """Update  in this component's state."""
         with self._lock:
             self._available = bool(available)
             self._left = float(max(0.0, min(100.0, left)))
@@ -96,10 +101,12 @@ class AudioMeter:
 
     @staticmethod
     def _rms_value(x: np.ndarray) -> float:
+        """Handle rms value for this module."""
         y = x.astype(np.float32)
         return float(np.sqrt(np.mean(y * y))) if y.size else 0.0
 
     def _pick_loopback_device(self, pa: "pyaudio.PyAudio") -> int:
+        """Handle pick loopback device for this module."""
         if self._device_index is not None:
             return int(self._device_index)
 
@@ -129,6 +136,7 @@ class AudioMeter:
         raise RuntimeError("no_loopback_input_device")
 
     def _iter_session_peaks(self) -> Iterable[float]:
+        """Handle iter session peaks for this module."""
         if AudioUtilities is None or IAudioMeterInformation is None:
             return
 
@@ -152,6 +160,7 @@ class AudioMeter:
             yield float(meter.GetPeakValue())
 
     def _run_pycaw(self) -> None:
+        """Run the pycaw workflow for this component."""
         if AudioUtilities is None or IAudioMeterInformation is None:
             self._set(available=False, left=0.0, right=0.0, detected=False, reason="pycaw_module_missing")
             return
@@ -184,6 +193,7 @@ class AudioMeter:
             self._stop.wait(timeout=poll_s)
 
     def _run_loopback(self) -> None:
+        """Run the loopback workflow for this component."""
         if pyaudio is None:
             self._set(available=False, left=0.0, right=0.0, detected=False, reason="pyaudiowpatch_module_missing")
             return
@@ -248,6 +258,7 @@ class AudioMeter:
             pa.terminate()
 
     def _run(self) -> None:
+        """Execute the main loop for this component until shutdown is requested."""
         if not self._enabled:
             self._set(available=False, left=0.0, right=0.0, detected=False, reason="disabled")
             return

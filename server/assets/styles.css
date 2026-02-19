@@ -82,7 +82,7 @@ button:hover { border-color: rgba(255, 255, 255, 0.18); }
 }
 
 .dashboard-grid {
-  /* Keep columns symmetric so one canvas cannot force sibling panels off-screen. */
+  /* Enforce a stable 2x2 dashboard layout. */
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-template-areas:
     "json motion"
@@ -93,6 +93,11 @@ button:hover { border-color: rgba(255, 255, 255, 0.18); }
 .panel-motion { grid-area: motion; }
 .panel-heatmap { grid-area: heatmap; }
 .panel-audio { grid-area: audio; }
+
+.panel-heatmap {
+  display: flex;
+  flex-direction: column;
+}
 
 .panel {
   background: linear-gradient(180deg, var(--panel), var(--panel2));
@@ -166,6 +171,8 @@ canvas {
   border-radius: 12px;
   background: rgba(0, 0, 0, 0.18);
   padding: 10px;
+  flex: 1;
+  min-height: 320px;
 }
 
 /* Tiles heatmap is responsive via JS aspectRatio + height:auto */
@@ -216,16 +223,7 @@ canvas#tilesHeatmap {
   opacity: 0.85;
 }
 
-/* Responsive layout */
+/* Keep dashboard in 2x2 layout; slightly tighten JSON panel on narrow screens. */
 @media (max-width: 1200px) {
-  .grid { grid-template-columns: 1fr; }
-  .dashboard-grid {
-    grid-template-areas:
-      "json"
-      "motion"
-      "audio"
-      "heatmap";
-  }
   pre { height: 280px; }
 }
-

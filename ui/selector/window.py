@@ -231,6 +231,11 @@ class SelectorWindow(QWidget):
         self._apply_grid_size(rows=int(snapshot.grid_rows), cols=int(snapshot.grid_cols))
 
         try:
+            # Avoid snapping while the user is actively dragging/resizing the overlay.
+            if self._interact.is_dragging:
+                self.update()
+                return
+
             gx = int(self.x())
             gy = int(self.y())
             gw = int(self.width())

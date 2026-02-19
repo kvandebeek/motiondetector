@@ -5,6 +5,8 @@
   --text: #e8eefc;
   --muted: #9aa7c6;
   --border: rgba(255, 255, 255, 0.08);
+  --ctl-h: 32px;
+  --ctl-radius: 8px;
 }
 
 * { box-sizing: border-box; }
@@ -229,30 +231,55 @@ canvas#tilesHeatmap {
 
 
 .control-group {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
+  display: grid;
+  row-gap: 10px;
+  align-items: center;
+  padding: 12px 14px;
 }
 
 .rowline {
-  display: flex;
+  display: grid;
+  grid-auto-flow: column;
   align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+  column-gap: 10px;
+}
+
+.rowline > span,
+.inline-check span {
+  line-height: var(--ctl-h);
 }
 
 .inline-check {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  min-height: var(--ctl-h);
+}
+
+.inline-check input {
+  width: 20px;
+  height: 20px;
 }
 
 .btn-mini {
-  padding: 6px 9px;
-  border-radius: 8px;
-  font-size: 12px;
+  height: var(--ctl-h);
+  min-width: var(--ctl-h);
+  line-height: var(--ctl-h);
+  padding: 0;
+  border-radius: var(--ctl-radius);
+  font-size: 14px;
   font-weight: 700;
+}
+
+.rowline input[type="number"] {
+  height: var(--ctl-h);
+  border-radius: var(--ctl-radius);
+  padding: 0 8px;
+}
+
+#quitBtn {
+  height: var(--ctl-h);
+  align-self: center;
 }
 
 

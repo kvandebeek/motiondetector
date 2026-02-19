@@ -302,6 +302,10 @@ class SelectorInteractor:
         self._region.emit(reason="drag")
         return True
 
+    @property
+    def is_dragging(self) -> bool:
+        return self._drag_mode != "none"
+
     def on_mouse_release(self) -> None:
         """
         Finish any active drag and emit a final region update.

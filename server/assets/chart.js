@@ -87,15 +87,16 @@ export function drawMotionChart(canvas, historyPayloads) {
 export function drawAudioChart(canvas, historyPayloads) {
   const pts = (historyPayloads || [])
     .map((p) => {
-      const rawLevel = Number(p?.audio?.level);
-      const hasAudio = Number.isFinite(rawLevel);
-      const levelPct = hasAudio ? clamp01(rawLevel) * 100.0 : 0.0;
-      return { t: Number(p.timestamp) || 0, y: levelPct, hasAudio };
+      const rawPeak = Number(p?.audio?.peak);
+      const hasAudio = Number.isFinite(rawPeak);
+      // peak is expected in [0..1] for float32 PCM; normalize to percentage for readability.
+      const peakPct = hasAudio ? clamp01(rawPeak) * 100.0 : 0.0;
+      return { t: Number(p.timestamp) || 0, y: peakPct, hasAudio };
     })
     .filter((p) => p.t > 0)
     .sort((a, b) => a.t - b.t);
 
-  const hasAnyAudio = pts.some((p) => p.hasAudio && p.y > 0.01);
+  const hasAnyAudio = pts.some((p) => p.hasAudio);
   drawSeriesChart({
     canvas,
     points: pts,

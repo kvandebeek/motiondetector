@@ -4,6 +4,7 @@ import {
   HISTORY_URL,
   UI_URL,
   TILE_NUMBERS_URL,
+  GRID_URL,
   TILES_GET_URL,
   TILES_PUT_URL,
   fetchJson,
@@ -11,7 +12,7 @@ import {
   putJson,
 } from './api.js';
 import { fmtTime } from './utils.js';
-import { drawMotionChart, drawAudioChart } from './chart.js';
+import { drawAudioChart, drawChart } from './chart.js';
 import { drawTilesHeatmap, getGridAndTiles, tileIndexFromCanvasClick } from './heatmap.js';
 
 // --- DOM wiring --------------------------------------------------------------
@@ -27,9 +28,12 @@ const gridLabel = document.getElementById('gridLabel');
 const copyBtn = document.getElementById('copyJson');
 const quitBtn = document.getElementById('quitBtn');
 const toggleTileNumbers = document.getElementById('toggleTileNumbers');
+const gridRowsInput = document.getElementById('gridRows');
+const gridColsInput = document.getElementById('gridCols');
+const applyGridBtn = document.getElementById('applyGrid');
 
 const chartCanvas = document.getElementById('chart');
-const audioCanvas = document.getElementById('audioChart');
+const audioChartCanvas = document.getElementById('audioChart');
 const heatCanvas = document.getElementById('tilesHeatmap');
 
 // --- Client-side state -------------------------------------------------------
@@ -110,6 +114,10 @@ function renderStatus(payload) {
 
   // Single source of truth for the toggle is server-side UI state, embedded in /status.
   setToggleCheckedFromServer(payload?.ui?.show_tile_numbers);
+  if (gridRowsInput && gridColsInput) {
+    if (payload?.ui?.grid_rows) gridRowsInput.value = String(payload.ui.grid_rows);
+    if (payload?.ui?.grid_cols) gridColsInput.value = String(payload.ui.grid_cols);
+  }
 }
 
 async function loadTileMask() {
@@ -160,13 +168,12 @@ async function tick() {
 
   try {
     const hist = await fetchJson(HISTORY_URL);
-    const history = hist.history || [];
-    drawMotionChart(chartCanvas, history);
-    drawAudioChart(audioCanvas, history);
+    drawChart(chartCanvas, hist.history || []);
+    drawAudioChart(audioChartCanvas, hist.history || []);
   } catch {
     // If history fails, show an empty chart rather than stale or broken visuals.
-    drawMotionChart(chartCanvas, []);
-    drawAudioChart(audioCanvas, []);
+    drawChart(chartCanvas, []);
+    drawAudioChart(audioChartCanvas, []);
   }
 
   // If status fetch failed, keep the tile-number toggle reasonably in sync via /ui.
@@ -247,12 +254,24 @@ async function initUi() {
   // - Prefer /ui so the checkbox is correct even before the first /status response arrives.
   // - Default to true if /ui is unavailable (sensible, user-visible behavior).
   try {
-    const ui = await fetchJson(UI_URL);
-    setToggleCheckedFromServer(ui?.show_tile_numbers);
+      const ui = await fetchJson(UI_URL);
+      setToggleCheckedFromServer(ui?.show_tile_numbers);
+      if (gridRowsInput && ui?.grid_rows) gridRowsInput.value = String(ui.grid_rows);
+      if (gridColsInput && ui?.grid_cols) gridColsInput.value = String(ui.grid_cols);
   } catch {
     setToggleCheckedFromServer(true);
   }
 }
+
+applyGridBtn.addEventListener('click', async () => {
+  const rows = Number(gridRowsInput?.value || 0);
+  const cols = Number(gridColsInput?.value || 0);
+  if (!Number.isInteger(rows) || !Number.isInteger(cols) || rows <= 0 || cols <= 0) return;
+  try {
+    await postJson(GRID_URL, { rows, cols });
+    await loadTileMask();
+  } catch {}
+});
 
 // Startup sequence:
 // - init UI (toggle state)

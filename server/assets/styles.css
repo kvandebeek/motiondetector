@@ -78,14 +78,7 @@ button:hover { border-color: rgba(255, 255, 255, 0.18); }
   padding: 10px;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.dashboard-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-areas:
-    "json motion"
-    "heatmap audio";
+  gap: 14px;
 }
 
 .panel-json { grid-area: json; }
@@ -142,7 +135,7 @@ pre {
   font-size: 12px;
   line-height: 1.35;
   overflow: auto;
-  height: 380px;
+  height: 300px;
 }
 
 .chartwrap {
@@ -155,7 +148,7 @@ pre {
 /* Keep general canvases consistent */
 canvas {
   width: 100%;
-  height: 380px;
+  height: 300px;
   display: block;
 }
 

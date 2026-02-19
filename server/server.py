@@ -24,7 +24,7 @@ from server.status_store import StatusStore
 _ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 
 
-def create_app(store: StatusStore) -> FastAPI:
+def create_app(store: StatusStore, on_settings_changed=None) -> FastAPI:
     """
     Build the FastAPI application.
 
@@ -83,7 +83,20 @@ def create_app(store: StatusStore) -> FastAPI:
             return JSONResponse({"error": "enabled must be a boolean"}, status_code=400)
 
         store.set_show_tile_numbers(enabled_raw)
+        if callable(on_settings_changed):
+            on_settings_changed(show_tile_numbers=enabled_raw)
         return JSONResponse({"enabled": store.get_show_tile_numbers(), **store.get_ui_settings()})
+
+    @app.post("/ui/grid")
+    async def ui_grid(body: dict[str, Any] = Body(default={})) -> JSONResponse:
+        rows = body.get("rows")
+        cols = body.get("cols")
+        if not isinstance(rows, int) or not isinstance(cols, int) or rows <= 0 or cols <= 0:
+            return JSONResponse({"error": "rows and cols must be positive integers"}, status_code=400)
+        store.set_grid(rows=rows, cols=cols)
+        if callable(on_settings_changed):
+            on_settings_changed(grid_rows=rows, grid_cols=cols)
+        return JSONResponse(store.get_ui_settings())
 
     @app.get("/status")
     async def status() -> JSONResponse:
@@ -154,7 +167,7 @@ def create_app(store: StatusStore) -> FastAPI:
     return app
 
 
-def run_server_in_thread(*, host: str, port: int, store: StatusStore) -> threading.Thread:
+def run_server_in_thread(*, host: str, port: int, store: StatusStore, on_settings_changed=None) -> threading.Thread:
     """
     Run the FastAPI server in a background thread.
 
@@ -167,7 +180,7 @@ def run_server_in_thread(*, host: str, port: int, store: StatusStore) -> threadi
     - The returned thread is daemonized; application shutdown should be coordinated via
       StatusStore.quit_requested (or similar) in the main thread.
     """
-    app = create_app(store)
+    app = create_app(store, on_settings_changed=on_settings_changed)
 
     def _run() -> None:
         # Uvicorn manages its own event loop internally.

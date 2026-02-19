@@ -1,11 +1,10 @@
 # ui/selector_ui_settings.py
 from __future__ import annotations
 
-import json
 import threading
 from typing import Optional
-from urllib.request import Request, urlopen
 
+import httpx
 from PySide6.QtCore import QObject, QTimer, Signal
 
 
@@ -102,13 +101,13 @@ class UiSettingsPoller(QObject):
         def worker() -> None:
             # Perform the request and parse the boolean. Any failure yields val=None.
             try:
-                req = Request(url=url, method="GET", headers={"Cache-Control": "no-store"})
-                with urlopen(req, timeout=timeout_sec) as resp:
-                    raw = resp.read()
-                data = json.loads(raw.decode("utf-8", errors="replace"))
+                with httpx.Client(timeout=timeout_sec) as client:
+                    res = client.get(url, headers={"Cache-Control": "no-store"})
+                    res.raise_for_status()
+                    data = res.json()
 
-                raw_val = data.get("show_tile_numbers") if isinstance(data, dict) else None
-                val = raw_val if isinstance(raw_val, bool) else None
+                raw = data.get("show_tile_numbers") if isinstance(data, dict) else None
+                val = raw if isinstance(raw, bool) else None
             except Exception:
                 val = None
 

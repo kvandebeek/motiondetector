@@ -47,9 +47,6 @@ let lastShowTileNumbers = true;
 // Guard to prevent programmatic checkbox changes from re-triggering the change handler.
 let suppressToggleHandler = false;
 
-// Last raw /status payload (used for interactions that must avoid display-only JSON transforms).
-let lastStatusPayload = null;
-
 function setToggleCheckedFromServer(value) {
   // Normalize any “truthy”/“falsy” value into a strict boolean.
   const v = Boolean(value);
@@ -106,7 +103,6 @@ function renderStatus(payload) {
 
   // JSON viewer: keep it human-readable (pretty printed).
   jsonBox.textContent = JSON.stringify(statusForDisplay(payload), null, 2);
-  lastStatusPayload = payload;
 
   // Disabled tiles are duplicated in /status for convenience; keep our Set in sync.
   const d = payload?.video?.disabled_tiles;
@@ -228,8 +224,16 @@ toggleTileNumbers.addEventListener('change', async () => {
 
 heatCanvas.addEventListener('click', async (ev) => {
   // Determine which tile was clicked, then toggle it in the disabled set.
-  // Use the latest raw /status payload for hit-testing and grid dimensions.
-  const payload = lastStatusPayload;
+  // This is intentionally based on the JSON viewer contents so the user can see exactly
+  // what the click is acting on, but note that the JSON viewer contains a display transform.
+  const payloadText = jsonBox.textContent || '{}';
+  let payload = null;
+
+  try {
+    payload = JSON.parse(payloadText);
+  } catch {
+    payload = null;
+  }
 
   // Extract grid and tiles in a normalized way (helper handles missing structures).
   const { tiles, rows, cols } = getGridAndTiles(payload);

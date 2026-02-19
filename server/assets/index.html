@@ -27,8 +27,8 @@
     </div>
   </header>
 
-  <div class="grid dashboard-grid">
-    <section class="panel panel-json">
+  <div class="grid">
+    <section class="panel">
       <h2><span>Status JSON</span><span class="subtle" id="tsLabel">—</span></h2>
 
       <div class="pillrow">
@@ -54,14 +54,7 @@
       </div>
     </section>
 
-    <section class="panel panel-audio">
-      <h2><span>Audio peak % (last {{HISTORY_SECONDS}}s)</span></h2>
-      <div class="chartwrap">
-        <canvas id="audioChart" width="900" height="540"></canvas>
-      </div>
-    </section>
-
-    <section class="panel panel-heatmap">
+    <section class="panel">
       <h2><span>Tiles heatmap (0 → 1)</span></h2>
       <div class="heatwrap">
         <canvas id="tilesHeatmap" width="540" height="540" aria-label="Tiles heatmap (click tile to disable/enable)"></canvas>

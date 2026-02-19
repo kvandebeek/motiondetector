@@ -84,32 +84,12 @@ def run_selector_ui(
     quit_timer.setInterval(1000/25)
 
     def on_quit_tick() -> None:
-        try:
-            if quit_flag.is_set():
-                quit_timer.stop()
-                w.close()
-                app.quit()
-        except KeyboardInterrupt:
-            # On Windows, Ctrl-C can surface during Qt timer callbacks.
-            # Treat it as a graceful shutdown signal instead of printing a traceback.
-            quit_flag.set()
+        if quit_flag.is_set():
             quit_timer.stop()
-            try:
-                w.close()
-            except Exception:
-                pass
+            w.close()
             app.quit()
 
     quit_timer.timeout.connect(on_quit_tick)  # type: ignore[arg-type]
     quit_timer.start()
 
-    try:
-        app.exec()
-    except KeyboardInterrupt:
-        # Graceful Ctrl-C handling while the Qt event loop is running.
-        quit_flag.set()
-        try:
-            w.close()
-        except Exception:
-            pass
-        app.quit()
+    app.exec()

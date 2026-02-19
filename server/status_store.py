@@ -402,7 +402,6 @@ class StatusStore:
                 "stale": True,
                 "stale_age_sec": 0.0,
             },
-            "audio": {"state": "ERROR", "reason": "not_initialized", "level": 0.0, "rms": 0.0, "peak": 0.0, "baseline": 0.0, "threshold": 0.0, "detected": False, "timestamp": float(now)},
             "ui": {"show_tile_numbers": bool(show_tile_numbers)},
             "audio": {"available": False, "left": 0.0, "right": 0.0, "reason": "not_initialized"},
             "overall": {"state": "NOT_OK", "reasons": [str(reason)]},

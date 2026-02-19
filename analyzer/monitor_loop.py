@@ -75,17 +75,6 @@ class DetectionParams:
 
     analysis_inset_px: int = 10
 
-    audio_enabled: bool = True
-    audio_backend: str = "pyaudiowpatch"
-    audio_device_substr: str = ""
-    audio_samplerate: int = 48_000
-    audio_channels: int = 2
-    audio_block_ms: int = 250
-    audio_calib_sec: float = 2.0
-    audio_factor: float = 2.5
-    audio_abs_min: float = 0.00012
-
-
 
 def _to_gray_u8(frame_bgra: np.ndarray) -> np.ndarray:
     """
@@ -307,20 +296,6 @@ class MonitorLoop:
         )
         self._audio = AudioMeter()
 
-        self._audio_meter = AudioLoopbackMeter(
-            AudioMeterConfig(
-                enabled=bool(getattr(params, "audio_enabled", True)),
-                backend=str(getattr(params, "audio_backend", "pyaudiowpatch")),
-                device_substr=str(getattr(params, "audio_device_substr", "")),
-                samplerate=int(getattr(params, "audio_samplerate", 48_000)),
-                channels=int(getattr(params, "audio_channels", 2)),
-                block_ms=int(getattr(params, "audio_block_ms", 250)),
-                calib_sec=float(getattr(params, "audio_calib_sec", 2.0)),
-                factor=float(getattr(params, "audio_factor", 2.5)),
-                abs_min=float(getattr(params, "audio_abs_min", 0.00012)),
-            )
-        )
-
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
             return
@@ -347,7 +322,7 @@ class MonitorLoop:
                 try:
                     frame = self._capturer.grab(region)
                 except Exception as e:
-                    self._store.set_latest(self._error_payload(reason=str(e), region=region, audio=self._audio_meter.get_payload()))
+                    self._store.set_latest(self._error_payload(reason=str(e), region=region))
                     self._stop.wait(timeout=0.05)
                     continue
 
@@ -355,7 +330,7 @@ class MonitorLoop:
                     payload = self._process_frame(frame=frame, ts=t0, region=region)
                     self._store.set_latest(payload)
                 except Exception as e:
-                    self._store.set_latest(self._error_payload(reason=f"process_failed: {e}", region=region, audio=self._audio_meter.get_payload()))
+                    self._store.set_latest(self._error_payload(reason=f"process_failed: {e}", region=region))
 
                 elapsed = time.time() - t0
                 sleep_for = period - elapsed
@@ -368,10 +343,6 @@ class MonitorLoop:
                 pass
             try:
                 self._capturer.close_thread_resources()
-            except Exception:
-                pass
-            try:
-                self._audio_meter.stop()
             except Exception:
                 pass
 
@@ -415,7 +386,6 @@ class MonitorLoop:
 
     def _process_frame(self, *, frame: np.ndarray, ts: float, region: Region) -> Dict:
         gray_full = _to_gray_u8(frame)
-        audio = self._audio_meter.get_payload()
 
         rows, cols = self._store.get_grid()
         n_tiles = rows * cols
@@ -454,7 +424,6 @@ class MonitorLoop:
                 errors=["warming_up"],
                 stale=False,
                 stale_age_sec=0.0,
-                audio=audio,
             )
 
         diff = np.abs(gray.astype(np.int16) - self._prev_gray.astype(np.int16)).astype(np.uint8)
@@ -565,13 +534,7 @@ class MonitorLoop:
 
         if not all_tiles_disabled:
             frame_bgr = _bgra_to_bgr(frame)
-            try:
-                self._recorder.update(now_ts=ts, state=video_state, frame_bgr=frame_bgr)
-            except Exception as e:
-                # Recording failures should not break capture/detection payloads.
-                payload_errors = payload.get("errors")
-                if isinstance(payload_errors, list):
-                    payload_errors.append(f"recorder_failed: {e}")
+            self._recorder.update(now_ts=ts, state=video_state, frame_bgr=frame_bgr)
 
         self._prev_state = video_state
         _ = mean_norm_unmasked  # retained for future telemetry if needed
@@ -629,7 +592,7 @@ class MonitorLoop:
         }
 
     @staticmethod
-    def _error_payload(*, reason: str, region: Region, audio: Optional[Dict] = None) -> Dict:
+    def _error_payload(*, reason: str, region: Region) -> Dict:
         now = time.time()
         return {
             "timestamp": float(now),

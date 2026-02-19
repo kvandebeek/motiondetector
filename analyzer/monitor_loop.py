@@ -85,6 +85,11 @@ class DetectionParams:
     audio_calib_sec: float = 2.0
     audio_factor: float = 2.5
     audio_abs_min: float = 0.00012
+    audio_process_names: str = ""
+    audio_on_threshold: float = 0.01
+    audio_off_threshold: float = 0.005
+    audio_hold_ms: int = 300
+    audio_smooth_samples: int = 3
 
 
 
@@ -306,13 +311,20 @@ class MonitorLoop:
                 stop_grace_seconds=int(getattr(params, "record_stop_grace_seconds", 10)),
             )
         )
+        process_names = [p.strip() for p in str(params.audio_process_names).split(",") if p.strip()]
         self._audio = AudioMeter(
             enabled=bool(params.audio_enabled),
+            backend=str(params.audio_backend),
             device_substr=str(params.audio_device_substr),
             device_index=params.audio_device_index,
             samplerate=int(params.audio_samplerate),
             channels=int(params.audio_channels),
             block_ms=int(params.audio_block_ms),
+            process_names=process_names if process_names else None,
+            on_threshold=float(params.audio_on_threshold),
+            off_threshold=float(params.audio_off_threshold),
+            hold_ms=int(params.audio_hold_ms),
+            smooth_samples=int(params.audio_smooth_samples),
         )
 
     def start(self) -> None:
@@ -526,7 +538,7 @@ class MonitorLoop:
             overall_reasons = [] if motion_state == "MOTION" else ["no_motion_enabled_tiles"]
 
             if audio.available:
-                has_audio = max(audio.left, audio.right) > 1.0
+                has_audio = bool(getattr(audio, "detected", max(audio.left, audio.right) > 1.0))
                 suffix = "WITH_AUDIO" if has_audio else "NO_AUDIO"
                 video_state = f"{motion_state}_{suffix}"
             else:
@@ -615,6 +627,7 @@ class MonitorLoop:
                 "available": bool(audio.available),
                 "left": float(audio.left),
                 "right": float(audio.right),
+                "detected": bool(getattr(audio, "detected", False)),
                 "reason": str(audio.reason),
             },
             "overall": {"state": str(overall_state), "reasons": list(overall_reasons)},
@@ -628,6 +641,7 @@ class MonitorLoop:
         audio_available = bool(getattr(audio, "available", False))
         audio_left = float(getattr(audio, "left", 0.0))
         audio_right = float(getattr(audio, "right", 0.0))
+        audio_detected = bool(getattr(audio, "detected", False))
         audio_reason = str(getattr(audio, "reason", "unavailable"))
         return {
             "timestamp": float(now),
@@ -649,6 +663,7 @@ class MonitorLoop:
                 "available": audio_available,
                 "left": audio_left,
                 "right": audio_right,
+                "detected": audio_detected,
                 "reason": audio_reason,
             },
             "overall": {"state": "NOT_OK", "reasons": ["capture_error"]},

@@ -40,7 +40,7 @@
   },
   "audio": {
     "enabled": true,
-    "backend": "pyaudiowpatch",
+    "backend": "pycaw",
     "device_index": -1,
     "device_substr": "",
     "samplerate": 48000,
@@ -48,6 +48,11 @@
     "block_ms": 250,
     "calib_sec": 2.0,
     "factor": 2.5,
-    "abs_min": 0.00012
+    "abs_min": 0.00012,
+    "process_names": "chrome.exe,msedge.exe,firefox.exe",
+    "on_threshold": 0.01,
+    "off_threshold": 0.005,
+    "hold_ms": 300,
+    "smooth_samples": 3
   }
 }

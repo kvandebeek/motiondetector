@@ -111,6 +111,11 @@ class AppConfig:
     audio_calib_sec: float
     audio_factor: float
     audio_abs_min: float
+    audio_process_names: str
+    audio_on_threshold: float
+    audio_off_threshold: float
+    audio_hold_ms: int
+    audio_smooth_samples: int
 
     # -----------------------------
     # UI overlay settings
@@ -324,8 +329,8 @@ def load_config(path: str) -> AppConfig:
     # ---- Audio loopback ----
     audio_enabled = _opt_bool(audio_obj.get("enabled"), "audio.enabled", True)
     audio_backend = str(audio_obj.get("backend", "pyaudiowpatch")).strip().lower()
-    if audio_backend not in ("pyaudiowpatch", "soundcard", "auto", "default"):
-        raise ValueError("audio.backend must be one of: pyaudiowpatch, soundcard, auto")
+    if audio_backend not in ("pyaudiowpatch", "pycaw", "wasapi", "wasapi_session", "soundcard", "auto", "default"):
+        raise ValueError("audio.backend must be one of: pyaudiowpatch, pycaw, wasapi, wasapi_session, soundcard, auto")
 
     audio_device_substr_raw = audio_obj.get("device_substr")
     if audio_device_substr_raw is None:
@@ -342,6 +347,12 @@ def load_config(path: str) -> AppConfig:
     audio_factor = _require_num(audio_obj.get("factor", 2.5), "audio.factor")
     audio_abs_min = _require_num(audio_obj.get("abs_min", 0.00012), "audio.abs_min")
 
+    audio_process_names = _opt_str(audio_obj.get("process_names", ""), "audio.process_names", "")
+    audio_on_threshold = _require_num(audio_obj.get("on_threshold", 0.01), "audio.on_threshold")
+    audio_off_threshold = _require_num(audio_obj.get("off_threshold", 0.005), "audio.off_threshold")
+    audio_hold_ms = _opt_int(audio_obj.get("hold_ms"), "audio.hold_ms", 300)
+    audio_smooth_samples = _opt_int(audio_obj.get("smooth_samples"), "audio.smooth_samples", 3)
+
     if audio_device_index < -1:
         raise ValueError("audio.device_index must be >= -1")
     if audio_samplerate <= 0:
@@ -356,6 +367,17 @@ def load_config(path: str) -> AppConfig:
         raise ValueError("audio.factor must be > 0")
     if audio_abs_min < 0:
         raise ValueError("audio.abs_min must be >= 0")
+
+    if audio_on_threshold < 0 or audio_on_threshold > 1:
+        raise ValueError("audio.on_threshold must be in [0, 1]")
+    if audio_off_threshold < 0 or audio_off_threshold > 1:
+        raise ValueError("audio.off_threshold must be in [0, 1]")
+    if audio_off_threshold > audio_on_threshold:
+        raise ValueError("audio.off_threshold must be <= audio.on_threshold")
+    if audio_hold_ms < 0:
+        raise ValueError("audio.hold_ms must be >= 0")
+    if audio_smooth_samples <= 0:
+        raise ValueError("audio.smooth_samples must be > 0")
 
     # ---- UI overlay ----
     # Keep ints for pixel alignment and Qt geometry.
@@ -403,6 +425,11 @@ def load_config(path: str) -> AppConfig:
         audio_calib_sec=audio_calib_sec,
         audio_factor=audio_factor,
         audio_abs_min=audio_abs_min,
+        audio_process_names=audio_process_names,
+        audio_on_threshold=audio_on_threshold,
+        audio_off_threshold=audio_off_threshold,
+        audio_hold_ms=audio_hold_ms,
+        audio_smooth_samples=audio_smooth_samples,
         initial_region=initial_region,
         border_px=border_px,
         grid_line_px=grid_line_px,

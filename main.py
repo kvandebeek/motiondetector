@@ -207,6 +207,11 @@ def main() -> int:
         audio_calib_sec=float(getattr(cfg, "audio_calib_sec", 2.0)),
         audio_factor=float(getattr(cfg, "audio_factor", 2.5)),
         audio_abs_min=float(getattr(cfg, "audio_abs_min", 0.00012)),
+        audio_process_names=str(getattr(cfg, "audio_process_names", "")),
+        audio_on_threshold=float(getattr(cfg, "audio_on_threshold", 0.01)),
+        audio_off_threshold=float(getattr(cfg, "audio_off_threshold", 0.005)),
+        audio_hold_ms=int(getattr(cfg, "audio_hold_ms", 300)),
+        audio_smooth_samples=int(getattr(cfg, "audio_smooth_samples", 3)),
     )
 
     # Continuous capture + analysis loop.

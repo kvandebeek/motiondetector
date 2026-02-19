@@ -113,13 +113,14 @@ UI code is cleanly split under `ui/selector/`:
 
 ## 7) Audio loopback architecture
 
-- Audio meter uses `pyaudiowpatch` loopback input capture.
-- Device selection supports explicit `audio.device_index` and fallback auto-select (`audio.device_substr`, then first loopback input).
+- Audio meter supports `pycaw` WASAPI session metering (preferred for audio-present checks) and `pyaudiowpatch` loopback capture fallback.
+- WASAPI mode can filter sessions by `audio.process_names` and applies threshold + hysteresis (`on/off/hold/smooth`) to compute `audio.detected`.
+- Loopback mode still supports explicit `audio.device_index` and fallback auto-select (`audio.device_substr`, then first loopback input).
 - Failures are surfaced in payload (`audio.available=false`, `audio.reason=capture_failed:*`) without crashing the monitor loop.
 
 ### Assessment
-- ✅ Backend aligns with Windows loopback capture behavior and avoids SoundCard API incompatibilities.
-- ⚠️ Device numbering is machine-specific; production configs should pin `audio.device_index` where possible.
+- ✅ WASAPI session metering is independent of endpoint master volume and better matches binary "audio present" requirements.
+- ⚠️ Process/session identity is application-dependent; configs should pin `audio.process_names` for deterministic behavior when needed.
 
 ---
 

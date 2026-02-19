@@ -1,10 +1,11 @@
-"""Best-effort stereo audio level meter using Windows loopback capture via PyAudioWPatch."""
+"""Best-effort audio level meter using Windows loopback (PyAudioWPatch) or WASAPI sessions (pycaw)."""
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass
 import threading
 import time
-from typing import Optional
+from typing import Iterable, Optional, Set
 
 import numpy as np
 
@@ -13,12 +14,19 @@ try:
 except Exception:  # pragma: no cover - optional dependency at runtime
     pyaudio = None
 
+try:
+    from pycaw.pycaw import AudioUtilities, IAudioMeterInformation
+except Exception:  # pragma: no cover - optional dependency at runtime
+    AudioUtilities = None
+    IAudioMeterInformation = None
+
 
 @dataclass(frozen=True)
 class AudioLevel:
     available: bool
     left: float
     right: float
+    detected: bool
     reason: str
 
 
@@ -27,23 +35,38 @@ class AudioMeter:
         self,
         *,
         enabled: bool = True,
+        backend: str = "pyaudiowpatch",
         device_substr: str = "",
         device_index: Optional[int] = None,
         samplerate: int = 48_000,
         channels: int = 2,
         block_ms: int = 250,
+        process_names: Optional[Iterable[str]] = None,
+        on_threshold: float = 0.01,
+        off_threshold: float = 0.005,
+        hold_ms: int = 300,
+        smooth_samples: int = 3,
     ) -> None:
         self._enabled = bool(enabled)
+        self._backend = str(backend or "pyaudiowpatch").strip().lower()
         self._device_substr = str(device_substr or "").strip().lower()
         self._device_index = int(device_index) if device_index is not None else None
         self._samplerate = max(1, int(samplerate))
         self._channels = max(1, int(channels))
         self._block_ms = max(1, int(block_ms))
+        self._process_names: Optional[Set[str]] = (
+            {str(p).strip().lower() for p in process_names if str(p).strip()} if process_names else None
+        )
+        self._on_threshold = float(max(0.0, min(1.0, on_threshold)))
+        self._off_threshold = float(max(0.0, min(1.0, off_threshold)))
+        self._hold_ms = max(0, int(hold_ms))
+        self._smooth_samples = max(1, int(smooth_samples))
 
         self._lock = threading.Lock()
         self._available = False
         self._left = 0.0
         self._right = 0.0
+        self._detected = False
         self._reason = "not_initialized"
 
         self._stop = threading.Event()
@@ -61,13 +84,14 @@ class AudioMeter:
 
     def get_level(self) -> AudioLevel:
         with self._lock:
-            return AudioLevel(self._available, self._left, self._right, self._reason)
+            return AudioLevel(self._available, self._left, self._right, self._detected, self._reason)
 
-    def _set(self, *, available: bool, left: float, right: float, reason: str) -> None:
+    def _set(self, *, available: bool, left: float, right: float, detected: bool, reason: str) -> None:
         with self._lock:
             self._available = bool(available)
             self._left = float(max(0.0, min(100.0, left)))
             self._right = float(max(0.0, min(100.0, right)))
+            self._detected = bool(detected)
             self._reason = str(reason)
 
     @staticmethod
@@ -104,13 +128,64 @@ class AudioMeter:
             return fallback
         raise RuntimeError("no_loopback_input_device")
 
-    def _run(self) -> None:
-        if not self._enabled:
-            self._set(available=False, left=0.0, right=0.0, reason="disabled")
+    def _iter_session_peaks(self) -> Iterable[float]:
+        if AudioUtilities is None or IAudioMeterInformation is None:
             return
 
+        for session in AudioUtilities.GetAllSessions():
+            ctl = getattr(session, "_ctl", None)
+            if ctl is None:
+                continue
+
+            # Optionally scope to selected process names.
+            if self._process_names is not None:
+                proc = getattr(session, "Process", None)
+                if proc is None:
+                    continue
+                try:
+                    if proc.name().lower() not in self._process_names:
+                        continue
+                except Exception:
+                    continue
+
+            meter = ctl.QueryInterface(IAudioMeterInformation)
+            yield float(meter.GetPeakValue())
+
+    def _run_pycaw(self) -> None:
+        if AudioUtilities is None or IAudioMeterInformation is None:
+            self._set(available=False, left=0.0, right=0.0, detected=False, reason="pycaw_module_missing")
+            return
+
+        has_audio = False
+        last_state_change = time.monotonic()
+        history = deque(maxlen=self._smooth_samples)
+        poll_s = self._block_ms / 1000.0
+
+        self._set(available=True, left=0.0, right=0.0, detected=False, reason="ok")
+        while not self._stop.is_set():
+            peaks = list(self._iter_session_peaks())
+            peak = max(peaks, default=0.0)
+            history.append(peak)
+            smooth_peak = float(sum(history) / len(history)) if history else peak
+
+            now = time.monotonic()
+            elapsed_ms = int((now - last_state_change) * 1000)
+
+            # Schmitt trigger with hold-time to avoid rapid toggles.
+            if not has_audio and smooth_peak >= self._on_threshold and elapsed_ms >= self._hold_ms:
+                has_audio = True
+                last_state_change = now
+            elif has_audio and smooth_peak <= self._off_threshold and elapsed_ms >= self._hold_ms:
+                has_audio = False
+                last_state_change = now
+
+            level_pct = smooth_peak * 100.0
+            self._set(available=True, left=level_pct, right=level_pct, detected=has_audio, reason="ok")
+            self._stop.wait(timeout=poll_s)
+
+    def _run_loopback(self) -> None:
         if pyaudio is None:
-            self._set(available=False, left=0.0, right=0.0, reason="pyaudiowpatch_module_missing")
+            self._set(available=False, left=0.0, right=0.0, detected=False, reason="pyaudiowpatch_module_missing")
             return
 
         pa = pyaudio.PyAudio()
@@ -135,7 +210,7 @@ class AudioMeter:
                 frames_per_buffer=frames,
             )
 
-            self._set(available=True, left=0.0, right=0.0, reason="ok")
+            self._set(available=True, left=0.0, right=0.0, detected=False, reason="ok")
 
             while not self._stop.is_set():
                 raw = stream.read(frames, exception_on_overflow=False)
@@ -151,9 +226,16 @@ class AudioMeter:
                     left = self._rms_value(arr)
                     right = left
 
-                self._set(available=True, left=left * 100.0, right=right * 100.0, reason="ok")
+                peak = max(left, right)
+                self._set(
+                    available=True,
+                    left=left * 100.0,
+                    right=right * 100.0,
+                    detected=peak >= self._on_threshold,
+                    reason="ok",
+                )
         except Exception as e:
-            self._set(available=False, left=0.0, right=0.0, reason=f"capture_failed:{e}")
+            self._set(available=False, left=0.0, right=0.0, detected=False, reason=f"capture_failed:{e}")
             while not self._stop.is_set():
                 time.sleep(0.5)
         finally:
@@ -164,3 +246,17 @@ class AudioMeter:
             except Exception:
                 pass
             pa.terminate()
+
+    def _run(self) -> None:
+        if not self._enabled:
+            self._set(available=False, left=0.0, right=0.0, detected=False, reason="disabled")
+            return
+
+        # Prefer WASAPI audio-session metering when requested because it is independent
+        # of endpoint master volume and ideal for binary “audio present” checks.
+        if self._backend in ("pycaw", "wasapi", "wasapi_session"):
+            self._run_pycaw()
+            return
+
+        # Keep existing loopback backend as fallback/default for compatibility.
+        self._run_loopback()

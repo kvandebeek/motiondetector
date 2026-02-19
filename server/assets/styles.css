@@ -83,12 +83,13 @@ button:hover { border-color: rgba(255, 255, 255, 0.18); }
   gap: 14px;
 }
 
-.dashboard-grid {
-  /* Enforce a stable 2x2 dashboard layout. */
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+.dashboard-grid{
+  grid-template-columns:repeat(2,minmax(0,1fr));
   grid-template-areas:
     "heatmap json"
     "motion audio";
+  align-items:start;      /* do NOT stretch to viewport */
+  grid-auto-rows:auto;    /* content-sized rows */
 }
 
 .panel-json { grid-area: json; }
@@ -109,6 +110,7 @@ button:hover { border-color: rgba(255, 255, 255, 0.18); }
   overflow: hidden;
   min-width: 0;
   min-height: 140px;
+  height: 100%;
 }
 
 .panel h2 {
@@ -166,7 +168,7 @@ pre {
   font-size: 12px;
   line-height: 1.35;
   overflow: auto;
-  height: 300px;
+  height: clamp(260px, 34vh, 540px);
 }
 
 .chartwrap {
@@ -241,9 +243,8 @@ canvas#tilesHeatmap {
 
 /* Keep dashboard in 2x2 layout; slightly tighten JSON panel on narrow screens. */
 @media (max-width: 1200px) {
-  pre { height: 280px; }
+  pre { height: clamp(240px, 30vh, 480px); }
 }
-
 
 .control-group {
   display: grid;
@@ -319,16 +320,17 @@ canvas#tilesHeatmap {
   box-sizing: border-box;
 }
 
-.panel-json {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
+.panel-json{
+  display:flex;
+  flex-direction:column;
+  min-height:0;
 }
 
-#jsonBox {
-  flex: 1;
-  min-height: 0;
-  height: auto;
+#jsonBox{
+  flex:0 0 auto;                 /* don’t expand to fill */
+  height:auto;
+  max-height:540px;              /* match your heatmap’s visual height */
+  overflow:auto;                 /* scrollbar inside JSON */
 }
 
 #quitBtn {
@@ -348,7 +350,6 @@ input[type="number"] {
   -moz-appearance: textfield;
   appearance: textfield;
 }
-
 
 @media (max-width: 1500px) {
   .actions {

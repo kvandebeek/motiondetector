@@ -5,6 +5,8 @@ A small Python application that detects motion in a user-defined on-screen regio
 You select the region using a transparent, always-on-top overlay window with a configurable grid. Motion metrics are exposed via a local **FastAPI** server (JSON endpoints + a lightweight dashboard).  
 Optional: record short clips based on motion state.
 
+It also includes a **synthetic test-data trainer mode** to exercise detection thresholds and state transitions without relying on live screen content.
+
 ---
 
 ## Documentation
@@ -19,14 +21,21 @@ Optional: record short clips based on motion state.
 - Transparent, frameless overlay window you can move/resize.
 - Grid overlay (rows × cols) aligned with analysis tiles.
 - Optional tile numbers rendered on the overlay.
-- Click tiles to toggle enabled/disabled (backed by the server).  
+- Optional overlay of the current detector state text (`show_overlay_state`).
+- Click tiles to toggle enabled/disabled (backed by the server).
+- Runtime UI settings poll/sync (`/ui`) so grid size, tile labels, and region can be updated live.
 
 ### Motion analysis
 - Captures frames from the selected region (currently **MSS** backend).
 - Computes:
   - `motion_mean` (overall motion score)
+  - `motion_instant_mean`, `motion_instant_top1`, and top-k activity proxy (`motion_instant_activity`)
+  - confidence score (`video.confidence`)
   - per-tile motion values (row-major list matching the configured grid)
-  - motion+audio states (`NO_MOTION_WITH_AUDIO`, `NO_MOTION_NO_AUDIO`, etc.) and fallback `*_NOSOUNDHARDWARE` when loopback capture is unavailable
+  - motion+audio states (`NO_MOTION_WITH_AUDIO`, `LOW_ACTIVITY_NO_AUDIO`, `MOTION_WITH_AUDIO`, etc.) and fallback `*_NOSOUNDHARDWARE` when audio hardware/session metering is unavailable
+- Includes no-motion grace voting (`no_motion_grace_period_seconds` + `no_motion_grace_required_ratio`) to reduce state flapping.
+- Supports tile masking from the UI (`disabled_tiles`) and publishes masked tiles as `null`.
+- Emits explicit `ALL_TILES_DISABLED` state when every tile is masked.
 - Supports an **analysis inset** to ignore borders/shadows that cause noisy diffs.
 
 ### Server API + dashboard
@@ -34,9 +43,15 @@ Optional: record short clips based on motion state.
   - latest status
   - rolling history
   - tile disable mask
-  - UI settings (e.g., show/hide tile numbers)
+  - UI settings (tile numbers, overlay state, grid shape, region)
   - graceful shutdown via `/quit`
 - Serves a browser UI from static assets.
+
+### Synthetic test-data trainer (optional)
+- Launch with `--testdata`, `--testdata-fast`, or `--testdata-slow`.
+- Opens a generated-content window coupled to the selector window geometry.
+- Polls `/status` and logs detector results for scene-by-scene evaluation.
+- Writes run logs and summary artifacts into `./testdata_logs`.
 
 ### Optional recording
 - Record short clips when a configured trigger state is active (default trigger: `NO_MOTION`).
@@ -98,6 +113,13 @@ Start the app:
 
 - `python main.py`
 
+Optional trainer modes:
+
+- `python main.py --testdata`
+- `python main.py --testdata-fast`
+- `python main.py --testdata-slow`
+- `python main.py --testdata --testdata-seed 1337`
+
 It will:
 - start the FastAPI server
 - start the monitor loop thread
@@ -113,11 +135,13 @@ Current config structure (high-level):
 - `capture.backend` (currently `MSS`), `capture.fps`
 - `motion.*`
   - thresholds (`no_motion_threshold`, `low_activity_threshold`)
+  - grace voting (`no_motion_grace_period_seconds`, `no_motion_grace_required_ratio`)
   - smoothing (`ema_alpha`)
   - normalization (`mean_full_scale`, `tile_full_scale`)
   - grid (`grid_rows`, `grid_cols`)
   - history retention (`history_seconds`)
 - `recording.*` (optional)
+  - `stop_grace_seconds` supported (if present)
 - `audio.*` (optional loopback meter settings)
   - `enabled` (default `true`)
   - `backend` (`pycaw`/`wasapi_session` for WASAPI session metering, or `pyaudiowpatch` for loopback capture)
@@ -127,6 +151,7 @@ Current config structure (high-level):
   - `process_names` (comma-separated optional process filter, e.g. `chrome.exe,msedge.exe`)
   - `on_threshold`, `off_threshold`, `hold_ms`, `smooth_samples` for audio-present hysteresis
 - `ui.*` (initial region + visuals + `show_tile_numbers`)
+  - includes `show_overlay_state` when enabled
 
 Tip: keep `grid_rows`/`grid_cols` reasonable; very large grids increase CPU cost and UI clutter.
 
@@ -158,11 +183,20 @@ Base URL is typically:
   UI settings (server-side source of truth)
 - `POST /ui/tile-numbers`  
   Toggle tile-number visibility (server-driven)
+- `POST /ui/grid`
+  Update runtime grid rows/cols
+- `POST /ui/state-overlay`
+  Toggle selector overlay state label rendering
+- `POST /ui/region`
+  Update runtime region (x/y/width/height)
+- `GET /ui/settings`
+  Compatibility alias of `/ui`
 - `POST /quit`  
   Request graceful shutdown
 
 ### Payload notes
 - `audio` is included with `available`, `left`, `right`, `detected`, and `reason` (`left/right` are 0..100).
+- Status now includes video confidence and instant metrics (`motion_instant_mean`, `motion_instant_top1`, `motion_instant_activity`).
 - Tiles are a single ordered list (row-major).
 - Disabled tiles are represented as:
   - indices in `disabled_tiles`
@@ -212,6 +246,11 @@ Check:
 - `recording.enabled: true`
 - `recording.assets_dir` exists or is creatable
 - Trigger state (`recording.trigger_state`) matches your desired behavior
+
+### Testing/tuning with synthetic scenes
+- Run one of the `--testdata*` modes.
+- Compare `expected_state` (generated scenes) against actual `/status.video.state` in logs.
+- Review generated summaries in `./testdata_logs` after the run.
 
 ---
 

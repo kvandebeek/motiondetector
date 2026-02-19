@@ -81,6 +81,12 @@ button:hover { border-color: rgba(255, 255, 255, 0.18); }
   gap: 14px;
 }
 
+.dashboard-grid {
+  grid-template-areas:
+    "json motion"
+    "audio heatmap";
+}
+
 .panel-json { grid-area: json; }
 .panel-motion { grid-area: motion; }
 .panel-heatmap { grid-area: heatmap; }

@@ -191,6 +191,14 @@ def main() -> int:
         record_assets_dir=str(cfg.recording_assets_dir),
         record_stop_grace_seconds=int(getattr(cfg, "record_stop_grace_seconds", 10)),
         analysis_inset_px=int(getattr(cfg, "analysis_inset_px", 0)),
+        audio_enabled=bool(getattr(cfg, "audio_enabled", True)),
+        audio_device_substr=str(getattr(cfg, "audio_device_substr", "")),
+        audio_samplerate=int(getattr(cfg, "audio_samplerate", 48_000)),
+        audio_channels=int(getattr(cfg, "audio_channels", 2)),
+        audio_block_ms=int(getattr(cfg, "audio_block_ms", 250)),
+        audio_calib_sec=float(getattr(cfg, "audio_calib_sec", 2.0)),
+        audio_factor=float(getattr(cfg, "audio_factor", 2.5)),
+        audio_abs_min=float(getattr(cfg, "audio_abs_min", 0.00012)),
     )
 
     # Continuous capture + analysis loop.

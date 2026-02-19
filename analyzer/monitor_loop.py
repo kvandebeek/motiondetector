@@ -35,6 +35,7 @@ from typing import Callable, Deque, Dict, List, Optional, Tuple, Set
 import numpy as np
 
 from analyzer.capture import Region, ScreenCapturer
+from analyzer.audio_meter import AudioLoopbackMeter, AudioMeterConfig
 from analyzer.recorder import ClipRecorder, RecorderConfig
 from server.status_store import StatusStore
 
@@ -73,6 +74,16 @@ class DetectionParams:
     record_stop_grace_seconds: int = 10
 
     analysis_inset_px: int = 10
+
+    audio_enabled: bool = True
+    audio_device_substr: str = ""
+    audio_samplerate: int = 48_000
+    audio_channels: int = 2
+    audio_block_ms: int = 250
+    audio_calib_sec: float = 2.0
+    audio_factor: float = 2.5
+    audio_abs_min: float = 0.00012
+
 
 
 def _to_gray_u8(frame_bgra: np.ndarray) -> np.ndarray:
@@ -294,10 +305,24 @@ class MonitorLoop:
             )
         )
 
+        self._audio_meter = AudioLoopbackMeter(
+            AudioMeterConfig(
+                enabled=bool(getattr(params, "audio_enabled", True)),
+                device_substr=str(getattr(params, "audio_device_substr", "")),
+                samplerate=int(getattr(params, "audio_samplerate", 48_000)),
+                channels=int(getattr(params, "audio_channels", 2)),
+                block_ms=int(getattr(params, "audio_block_ms", 250)),
+                calib_sec=float(getattr(params, "audio_calib_sec", 2.0)),
+                factor=float(getattr(params, "audio_factor", 2.5)),
+                abs_min=float(getattr(params, "audio_abs_min", 0.00012)),
+            )
+        )
+
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
             return
         self._stop.clear()
+        self._audio_meter.start()
         self._thread = threading.Thread(target=self._run, name="motiondetector-monitor", daemon=True)
         self._thread.start()
 
@@ -318,7 +343,7 @@ class MonitorLoop:
                 try:
                     frame = self._capturer.grab(region)
                 except Exception as e:
-                    self._store.set_latest(self._error_payload(reason=str(e), region=region))
+                    self._store.set_latest(self._error_payload(reason=str(e), region=region, audio=self._audio_meter.get_payload()))
                     self._stop.wait(timeout=0.05)
                     continue
 
@@ -326,7 +351,7 @@ class MonitorLoop:
                     payload = self._process_frame(frame=frame, ts=t0, region=region)
                     self._store.set_latest(payload)
                 except Exception as e:
-                    self._store.set_latest(self._error_payload(reason=f"process_failed: {e}", region=region))
+                    self._store.set_latest(self._error_payload(reason=f"process_failed: {e}", region=region, audio=self._audio_meter.get_payload()))
 
                 elapsed = time.time() - t0
                 sleep_for = period - elapsed
@@ -339,6 +364,10 @@ class MonitorLoop:
                 pass
             try:
                 self._capturer.close_thread_resources()
+            except Exception:
+                pass
+            try:
+                self._audio_meter.stop()
             except Exception:
                 pass
 
@@ -382,6 +411,7 @@ class MonitorLoop:
 
     def _process_frame(self, *, frame: np.ndarray, ts: float, region: Region) -> Dict:
         gray_full = _to_gray_u8(frame)
+        audio = self._audio_meter.get_payload()
 
         rows = int(self._params.grid_rows)
         cols = int(self._params.grid_cols)
@@ -421,6 +451,7 @@ class MonitorLoop:
                 errors=["warming_up"],
                 stale=False,
                 stale_age_sec=0.0,
+                audio=audio,
             )
 
         diff = np.abs(gray.astype(np.int16) - self._prev_gray.astype(np.int16)).astype(np.uint8)
@@ -516,6 +547,7 @@ class MonitorLoop:
             errors=[],
             stale=False,
             stale_age_sec=0.0,
+            audio=audio,
         )
 
         if not all_tiles_disabled:
@@ -552,6 +584,7 @@ class MonitorLoop:
         errors: List[str],
         stale: bool,
         stale_age_sec: float,
+        audio: Dict,
     ) -> Dict:
         tiles_list: List[Optional[float]] = [float(x) if x is not None else None for x in tiles]
 
@@ -571,13 +604,14 @@ class MonitorLoop:
                 "stale": bool(stale),
                 "stale_age_sec": float(stale_age_sec),
             },
+            "audio": dict(audio) if isinstance(audio, dict) else {"state": "ERROR", "reason": "invalid_audio_payload", "level": 0.0},
             "overall": {"state": str(overall_state), "reasons": list(overall_reasons)},
             "errors": list(errors),
             "region": {"x": int(region.x), "y": int(region.y), "width": int(region.width), "height": int(region.height)},
         }
 
     @staticmethod
-    def _error_payload(*, reason: str, region: Region) -> Dict:
+    def _error_payload(*, reason: str, region: Region, audio: Optional[Dict] = None) -> Dict:
         now = time.time()
         return {
             "timestamp": float(now),
@@ -595,6 +629,7 @@ class MonitorLoop:
                 "stale": True,
                 "stale_age_sec": 0.0,
             },
+            "audio": dict(audio) if isinstance(audio, dict) else {"state": "ERROR", "reason": "unavailable", "level": 0.0, "rms": 0.0, "peak": 0.0, "baseline": 0.0, "threshold": 0.0, "detected": False, "timestamp": float(now)},
             "overall": {"state": "NOT_OK", "reasons": ["capture_error"]},
             "errors": [str(reason)],
             "region": {"x": int(region.x), "y": int(region.y), "width": int(region.width), "height": int(region.height)},

@@ -98,6 +98,18 @@ class AppConfig:
     recording_assets_dir: str
 
     # -----------------------------
+    # Audio loopback settings
+    # -----------------------------
+    audio_enabled: bool
+    audio_device_substr: str
+    audio_samplerate: int
+    audio_channels: int
+    audio_block_ms: int
+    audio_calib_sec: float
+    audio_factor: float
+    audio_abs_min: float
+
+    # -----------------------------
     # UI overlay settings
     # -----------------------------
     # Kept as a dict because it maps cleanly from JSON and is used to seed Region objects.
@@ -229,7 +241,7 @@ def load_config(path: str) -> AppConfig:
     # UI.initial_region is required and must be a dict.
     initial_region_obj = _require_obj(ui, "initial_region")
 
-    # Optional section: recording.
+    # Optional sections: recording + audio.
     recording = raw.get("recording")
     if recording is None:
         recording_obj: Dict[str, Any] = {}
@@ -237,6 +249,14 @@ def load_config(path: str) -> AppConfig:
         recording_obj = recording
     else:
         raise ValueError("Missing or invalid 'recording' object in config (expected object)")
+
+    audio = raw.get("audio")
+    if audio is None:
+        audio_obj: Dict[str, Any] = {}
+    elif isinstance(audio, dict):
+        audio_obj = audio
+    else:
+        raise ValueError("Missing or invalid 'audio' object in config (expected object)")
 
     # ---- Server ----
     server_host = _require_str(server.get("host"), "server.host")
@@ -296,6 +316,36 @@ def load_config(path: str) -> AppConfig:
     if recording_cooldown_seconds < 0:
         raise ValueError("recording.cooldown_seconds must be >= 0")
 
+
+    # ---- Audio loopback ----
+    audio_enabled = _opt_bool(audio_obj.get("enabled"), "audio.enabled", True)
+    audio_device_substr_raw = audio_obj.get("device_substr")
+    if audio_device_substr_raw is None:
+        audio_device_substr = ""
+    elif isinstance(audio_device_substr_raw, str):
+        audio_device_substr = str(audio_device_substr_raw)
+    else:
+        raise ValueError("Missing or invalid 'audio.device_substr' (expected string)")
+    audio_samplerate = _opt_int(audio_obj.get("samplerate"), "audio.samplerate", 48_000)
+    audio_channels = _opt_int(audio_obj.get("channels"), "audio.channels", 2)
+    audio_block_ms = _opt_int(audio_obj.get("block_ms"), "audio.block_ms", 250)
+    audio_calib_sec = _require_num(audio_obj.get("calib_sec", 2.0), "audio.calib_sec")
+    audio_factor = _require_num(audio_obj.get("factor", 2.5), "audio.factor")
+    audio_abs_min = _require_num(audio_obj.get("abs_min", 0.00012), "audio.abs_min")
+
+    if audio_samplerate <= 0:
+        raise ValueError("audio.samplerate must be > 0")
+    if audio_channels <= 0:
+        raise ValueError("audio.channels must be > 0")
+    if audio_block_ms <= 0:
+        raise ValueError("audio.block_ms must be > 0")
+    if audio_calib_sec < 0:
+        raise ValueError("audio.calib_sec must be >= 0")
+    if audio_factor <= 0:
+        raise ValueError("audio.factor must be > 0")
+    if audio_abs_min < 0:
+        raise ValueError("audio.abs_min must be >= 0")
+
     # ---- UI overlay ----
     # Keep ints for pixel alignment and Qt geometry.
     initial_region = {
@@ -331,6 +381,14 @@ def load_config(path: str) -> AppConfig:
         recording_clip_seconds=recording_clip_seconds,
         recording_cooldown_seconds=recording_cooldown_seconds,
         recording_assets_dir=recording_assets_dir,
+        audio_enabled=audio_enabled,
+        audio_device_substr=audio_device_substr,
+        audio_samplerate=audio_samplerate,
+        audio_channels=audio_channels,
+        audio_block_ms=audio_block_ms,
+        audio_calib_sec=audio_calib_sec,
+        audio_factor=audio_factor,
+        audio_abs_min=audio_abs_min,
         initial_region=initial_region,
         border_px=border_px,
         grid_line_px=grid_line_px,

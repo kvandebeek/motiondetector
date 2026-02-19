@@ -11,42 +11,52 @@
   <header>
     <h1>motiondetector</h1>
     <div class="actions">
-      <div class="toggle control-group" title="Change grid at runtime and overlay labels">
-        <span>Grid</span>
-        <input id="gridRows" type="number" min="1" style="width:56px" />
-        <span>x</span>
-        <input id="gridCols" type="number" min="1" style="width:56px" />
-        <button id="applyGrid">Apply</button>
-        <label class="inline-check" title="Show numbers on the selector overlay grid">
-          <input id="toggleTileNumbers" type="checkbox" />
-          <span>Tile numbers</span>
-        </label>
-      </div>
-
-      <div class="toggle control-group" title="Grid position and size in pixels">
+      <div class="toggle control-group" title="Grid size">
         <div class="rowline">
-          <span>X</span><input id="regionX" type="number" style="width:76px" />
-          <span>Y</span><input id="regionY" type="number" style="width:76px" />
-          <button id="nudgeUp" class="btn-mini">↑</button>
-          <button id="nudgeDown" class="btn-mini">↓</button>
-          <button id="nudgeLeft" class="btn-mini">←</button>
-          <button id="nudgeRight" class="btn-mini">→</button>
+          <span>Grid X</span>
+          <button id="gridColsMinus" class="btn-mini">−</button>
+          <input id="gridCols" type="number" min="1" style="width:68px" />
+          <button id="gridColsPlus" class="btn-mini">+</button>
+          <span>(columns)</span>
         </div>
         <div class="rowline">
-          <span>W</span><input id="regionW" type="number" min="1" style="width:76px" />
-          <button id="wPlus" class="btn-mini">W+</button>
-          <button id="wMinus" class="btn-mini">W-</button>
-          <span>H</span><input id="regionH" type="number" min="1" style="width:76px" />
-          <button id="hPlus" class="btn-mini">H+</button>
-          <button id="hMinus" class="btn-mini">H-</button>
-          <button id="applyRegion">Apply</button>
+          <span>Grid W</span>
+          <button id="gridRowsMinus" class="btn-mini">−</button>
+          <input id="gridRows" type="number" min="1" style="width:68px" />
+          <button id="gridRowsPlus" class="btn-mini">+</button>
+          <span>(rows)</span>
         </div>
       </div>
 
-      <label class="toggle" title="Show current detector state in the selector chrome">
-        <input id="toggleOverlayState" type="checkbox" />
-        <span>Overlay state</span>
-      </label>
+      <div class="toggle control-group" title="Overlay position and size">
+        <div class="rowline">
+          <span>X</span>
+          <button id="regionXMinus" class="btn-mini">−</button>
+          <input id="regionX" type="number" style="width:76px" />
+          <button id="regionXPlus" class="btn-mini">+</button>
+
+          <span>Y</span>
+          <button id="regionYMinus" class="btn-mini">−</button>
+          <input id="regionY" type="number" style="width:76px" />
+          <button id="regionYPlus" class="btn-mini">+</button>
+        </div>
+        <div class="rowline">
+          <span>W</span>
+          <button id="regionWMinus" class="btn-mini">−</button>
+          <input id="regionW" type="number" min="1" style="width:76px" />
+          <button id="regionWPlus" class="btn-mini">+</button>
+
+          <span>H</span>
+          <button id="regionHMinus" class="btn-mini">−</button>
+          <input id="regionH" type="number" min="1" style="width:76px" />
+          <button id="regionHPlus" class="btn-mini">+</button>
+        </div>
+      </div>
+
+      <div class="toggle control-group" title="Overlay options">
+        <label class="inline-check"><input id="toggleTileNumbers" type="checkbox" /><span>Tile numbers</span></label>
+        <label class="inline-check"><input id="toggleOverlayState" type="checkbox" /><span>Overlay state</span></label>
+      </div>
 
       <button id="quitBtn">Quit</button>
     </div>
@@ -75,6 +85,7 @@
       <div class="pillrow">
         <span class="pill" id="pillVideo">video: —</span>
         <span class="pill" id="pillMean">motion_mean: —</span>
+        <span class="pill" id="pillAudioPeak">audio peak: —</span>
         <span class="pill" id="pillOverall">overall: —</span>
       </div>
 

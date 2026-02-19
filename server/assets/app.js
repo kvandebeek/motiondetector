@@ -21,6 +21,7 @@ const jsonBox = document.getElementById('jsonBox');
 const tsLabel = document.getElementById('tsLabel');
 const pillVideo = document.getElementById('pillVideo');
 const pillMean = document.getElementById('pillMean');
+const pillAudioPeak = document.getElementById('pillAudioPeak');
 const pillOverall = document.getElementById('pillOverall');
 const gridLabel = document.getElementById('gridLabel');
 const monitorInfo = document.getElementById('monitorInfo');
@@ -29,22 +30,26 @@ const copyBtn = document.getElementById('copyJson');
 const quitBtn = document.getElementById('quitBtn');
 const toggleTileNumbers = document.getElementById('toggleTileNumbers');
 const toggleOverlayState = document.getElementById('toggleOverlayState');
+
 const gridRowsInput = document.getElementById('gridRows');
 const gridColsInput = document.getElementById('gridCols');
-const applyGridBtn = document.getElementById('applyGrid');
+const gridRowsMinusBtn = document.getElementById('gridRowsMinus');
+const gridRowsPlusBtn = document.getElementById('gridRowsPlus');
+const gridColsMinusBtn = document.getElementById('gridColsMinus');
+const gridColsPlusBtn = document.getElementById('gridColsPlus');
+
 const regionXInput = document.getElementById('regionX');
 const regionYInput = document.getElementById('regionY');
 const regionWInput = document.getElementById('regionW');
 const regionHInput = document.getElementById('regionH');
-const applyRegionBtn = document.getElementById('applyRegion');
-const nudgeUpBtn = document.getElementById('nudgeUp');
-const nudgeDownBtn = document.getElementById('nudgeDown');
-const nudgeLeftBtn = document.getElementById('nudgeLeft');
-const nudgeRightBtn = document.getElementById('nudgeRight');
-const wPlusBtn = document.getElementById('wPlus');
-const wMinusBtn = document.getElementById('wMinus');
-const hPlusBtn = document.getElementById('hPlus');
-const hMinusBtn = document.getElementById('hMinus');
+const regionXMinusBtn = document.getElementById('regionXMinus');
+const regionXPlusBtn = document.getElementById('regionXPlus');
+const regionYMinusBtn = document.getElementById('regionYMinus');
+const regionYPlusBtn = document.getElementById('regionYPlus');
+const regionWMinusBtn = document.getElementById('regionWMinus');
+const regionWPlusBtn = document.getElementById('regionWPlus');
+const regionHMinusBtn = document.getElementById('regionHMinus');
+const regionHPlusBtn = document.getElementById('regionHPlus');
 
 const chartCanvas = document.getElementById('chart');
 const audioChartCanvas = document.getElementById('audioChart');
@@ -56,18 +61,18 @@ let suppressOverlayToggleHandler = false;
 let lastShowTileNumbers = true;
 let lastShowOverlayState = false;
 let lastStatusPayload = null;
-const uiLocks = { grid: 0, region: 0 };
+let numericInitialized = false;
+let updatingGrid = false;
+let updatingRegion = false;
 
-function lockUi(key, ms = 1200) {
-  uiLocks[key] = Date.now() + ms;
+function n(v, fallback = 0) {
+  const x = Number(v);
+  return Number.isFinite(x) ? x : fallback;
 }
 
-function isUiLocked(key) {
-  return Date.now() < (uiLocks[key] || 0);
-}
-
-function hasFocus(el) {
-  return Boolean(el) && document.activeElement === el;
+function toPosInt(v, fallback = 1) {
+  const x = Math.round(n(v, fallback));
+  return x > 0 ? x : fallback;
 }
 
 function setToggleCheckedFromServer(value) {
@@ -91,7 +96,13 @@ function setOverlayToggleCheckedFromServer(value) {
 function statusForDisplay(payload) {
   const tiles = payload?.video?.tiles;
   if (!Array.isArray(tiles)) return payload;
-  return { ...payload, video: { ...payload.video, tiles: tiles.map((v) => (v === null ? 'disabled' : v)) } };
+  return {
+    ...payload,
+    video: {
+      ...payload.video,
+      tiles: tiles.map((v) => (v === null ? 'disabled' : v)),
+    },
+  };
 }
 
 function renderMonitorInfo(ui) {
@@ -112,25 +123,20 @@ function renderMonitorInfo(ui) {
   monitorInfo.textContent = `monitor: ${id} (${left},${top}) ${width}x${height}`;
 }
 
-function applyUiValues(ui) {
+function applyUiValues(ui, { initOnly = false } = {}) {
   if (!ui || typeof ui !== 'object') return;
 
-  if (!isUiLocked('grid') && !hasFocus(gridRowsInput) && !hasFocus(gridColsInput)) {
-    if (gridRowsInput && Number.isFinite(ui.grid_rows)) gridRowsInput.value = String(ui.grid_rows);
-    if (gridColsInput && Number.isFinite(ui.grid_cols)) gridColsInput.value = String(ui.grid_cols);
-  }
-
-  if (
-    !isUiLocked('region')
-    && !hasFocus(regionXInput)
-    && !hasFocus(regionYInput)
-    && !hasFocus(regionWInput)
-    && !hasFocus(regionHInput)
-  ) {
-    if (regionXInput && Number.isFinite(ui.region_x)) regionXInput.value = String(ui.region_x);
-    if (regionYInput && Number.isFinite(ui.region_y)) regionYInput.value = String(ui.region_y);
-    if (regionWInput && Number.isFinite(ui.region_width)) regionWInput.value = String(ui.region_width);
-    if (regionHInput && Number.isFinite(ui.region_height)) regionHInput.value = String(ui.region_height);
+  if (!numericInitialized || !initOnly) {
+    // Only initialize numeric controls once. Keep user-entered values afterward.
+    if (!numericInitialized) {
+      if (gridRowsInput) gridRowsInput.value = String(toPosInt(ui.grid_rows, 1));
+      if (gridColsInput) gridColsInput.value = String(toPosInt(ui.grid_cols, 1));
+      if (regionXInput) regionXInput.value = String(Math.round(n(ui.region_x, 0)));
+      if (regionYInput) regionYInput.value = String(Math.round(n(ui.region_y, 0)));
+      if (regionWInput) regionWInput.value = String(toPosInt(ui.region_width, 1));
+      if (regionHInput) regionHInput.value = String(toPosInt(ui.region_height, 1));
+      numericInitialized = true;
+    }
   }
 
   setToggleCheckedFromServer(ui.show_tile_numbers);
@@ -140,12 +146,15 @@ function applyUiValues(ui) {
 
 function renderStatus(payload) {
   tsLabel.textContent = fmtTime(payload.timestamp);
+
   const vState = payload?.video?.state ?? '—';
-  const mean = payload?.video?.motion_mean ?? 0;
+  const mean = n(payload?.video?.motion_mean, 0);
   const oState = payload?.overall?.state ?? '—';
+  const audioPeak = Math.max(n(payload?.audio?.left, 0), n(payload?.audio?.right, 0));
 
   pillVideo.textContent = `video: ${vState}`;
-  pillMean.textContent = `motion_mean: ${Number(mean).toFixed(4)}`;
+  pillMean.textContent = `motion_mean: ${mean.toFixed(4)}`;
+  pillAudioPeak.textContent = `audio peak: ${audioPeak.toFixed(1)}`;
   pillOverall.textContent = `overall: ${oState}`;
 
   jsonBox.textContent = JSON.stringify(statusForDisplay(payload), null, 2);
@@ -153,7 +162,8 @@ function renderStatus(payload) {
 
   const d = payload?.video?.disabled_tiles;
   if (Array.isArray(d)) disabledTiles = new Set(d);
-  applyUiValues(payload?.ui);
+
+  applyUiValues(payload?.ui, { initOnly: true });
 }
 
 async function loadTileMask() {
@@ -165,30 +175,86 @@ async function loadTileMask() {
 }
 
 async function saveTileMask() {
-  const list = Array.from(disabledTiles).filter(Number.isInteger).sort((a, b) => a - b);
+  const list = Array.from(disabledTiles)
+    .filter(Number.isInteger)
+    .sort((a, b) => a - b);
+
   const res = await putJson(TILES_PUT_URL, { disabled_tiles: list });
   const raw = res?.disabled_tiles;
   if (Array.isArray(raw)) disabledTiles = new Set(raw);
 }
 
-async function pushRegionUpdate(x, y, widthOverride = null, heightOverride = null) {
-  const width = widthOverride ?? Number(regionWInput?.value || lastStatusPayload?.ui?.region_width || 0);
-  const height = heightOverride ?? Number(regionHInput?.value || lastStatusPayload?.ui?.region_height || 0);
-  if (!Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) return;
+async function submitGrid() {
+  if (updatingGrid) return;
+  const rows = toPosInt(gridRowsInput?.value, 1);
+  const cols = toPosInt(gridColsInput?.value, 1);
+  if (!gridRowsInput || !gridColsInput) return;
+  gridRowsInput.value = String(rows);
+  gridColsInput.value = String(cols);
 
-  lockUi('region');
-  const ui = await postJson(REGION_URL, { x, y, width, height });
-  uiLocks.region = 0;
-  applyUiValues(ui);
+  updatingGrid = true;
+  try {
+    const res = await postJson(GRID_URL, { rows, cols });
+    if (res?.grid_rows) gridRowsInput.value = String(toPosInt(res.grid_rows, rows));
+    if (res?.grid_cols) gridColsInput.value = String(toPosInt(res.grid_cols, cols));
+    await loadTileMask();
+  } catch {
+    // Keep user values visible; no forced rollback.
+  } finally {
+    updatingGrid = false;
+  }
+}
+
+async function submitRegion() {
+  if (updatingRegion) return;
+  const x = Math.round(n(regionXInput?.value, 0));
+  const y = Math.round(n(regionYInput?.value, 0));
+  const width = toPosInt(regionWInput?.value, 1);
+  const height = toPosInt(regionHInput?.value, 1);
+  if (!regionXInput || !regionYInput || !regionWInput || !regionHInput) return;
+
+  regionXInput.value = String(x);
+  regionYInput.value = String(y);
+  regionWInput.value = String(width);
+  regionHInput.value = String(height);
+
+  updatingRegion = true;
+  try {
+    const ui = await postJson(REGION_URL, { x, y, width, height });
+    if (Number.isFinite(ui?.region_x)) regionXInput.value = String(Math.round(Number(ui.region_x)));
+    if (Number.isFinite(ui?.region_y)) regionYInput.value = String(Math.round(Number(ui.region_y)));
+    if (Number.isFinite(ui?.region_width)) regionWInput.value = String(toPosInt(ui.region_width, width));
+    if (Number.isFinite(ui?.region_height)) regionHInput.value = String(toPosInt(ui.region_height, height));
+    renderMonitorInfo(ui);
+  } catch {
+    // Keep user values visible; no forced rollback.
+  } finally {
+    updatingRegion = false;
+  }
+}
+
+function adjustNumberInput(input, delta, min = null) {
+  if (!input) return;
+  const next = Math.round(n(input.value, 0) + delta);
+  input.value = String(min === null ? next : Math.max(min, next));
 }
 
 async function tick() {
   let status = null;
+
   try {
     status = await fetchJson(STATUS_URL);
     renderStatus(status);
-    drawTilesHeatmap({ canvas: heatCanvas, gridLabelEl: gridLabel, payload: status, disabledTilesSet: disabledTiles });
-  } catch {}
+
+    drawTilesHeatmap({
+      canvas: heatCanvas,
+      gridLabelEl: gridLabel,
+      payload: status,
+      disabledTilesSet: disabledTiles,
+    });
+  } catch {
+    // keep last render
+  }
 
   try {
     const hist = await fetchJson(HISTORY_URL);
@@ -202,17 +268,21 @@ async function tick() {
   if (!status) {
     try {
       const ui = await fetchJson(UI_URL);
-      applyUiValues(ui);
+      applyUiValues(ui, { initOnly: true });
     } catch {}
   }
 }
 
 copyBtn.addEventListener('click', async () => {
-  try { await navigator.clipboard.writeText(jsonBox.textContent || '{}'); } catch {}
+  try {
+    await navigator.clipboard.writeText(jsonBox.textContent || '{}');
+  } catch {}
 });
 
 quitBtn.addEventListener('click', async () => {
-  try { await fetch('/quit', { method: 'POST' }); } catch {}
+  try {
+    await fetch('/quit', { method: 'POST' });
+  } catch {}
 });
 
 toggleTileNumbers.addEventListener('change', async () => {
@@ -241,60 +311,44 @@ heatCanvas.addEventListener('click', async (ev) => {
   const payload = lastStatusPayload;
   const { tiles, rows, cols } = getGridAndTiles(payload);
   if (!rows || !cols || !Array.isArray(tiles) || tiles.length !== rows * cols) return;
+
   const idx = tileIndexFromCanvasClick(heatCanvas, rows, cols, ev);
   if (disabledTiles.has(idx)) disabledTiles.delete(idx);
   else disabledTiles.add(idx);
-  try { await saveTileMask(); } catch { await loadTileMask(); }
-});
 
-applyGridBtn.addEventListener('click', async () => {
-  const rows = Number(gridRowsInput?.value || 0);
-  const cols = Number(gridColsInput?.value || 0);
-  if (!Number.isInteger(rows) || !Number.isInteger(cols) || rows <= 0 || cols <= 0) return;
   try {
-    lockUi('grid');
-    const res = await postJson(GRID_URL, { rows, cols });
-    uiLocks.grid = 0;
-    applyUiValues(res);
+    await saveTileMask();
+  } catch {
     await loadTileMask();
-  } catch {}
+  }
 });
 
-applyRegionBtn.addEventListener('click', async () => {
-  const x = Number(regionXInput?.value || 0);
-  const y = Number(regionYInput?.value || 0);
-  const w = Number(regionWInput?.value || 0);
-  const h = Number(regionHInput?.value || 0);
-  try { await pushRegionUpdate(x, y, w, h); } catch {}
-});
+// Immediate grid updates.
+gridRowsInput?.addEventListener('change', () => { void submitGrid(); });
+gridColsInput?.addEventListener('change', () => { void submitGrid(); });
+gridRowsMinusBtn?.addEventListener('click', () => { adjustNumberInput(gridRowsInput, -1, 1); void submitGrid(); });
+gridRowsPlusBtn?.addEventListener('click', () => { adjustNumberInput(gridRowsInput, +1, 1); void submitGrid(); });
+gridColsMinusBtn?.addEventListener('click', () => { adjustNumberInput(gridColsInput, -1, 1); void submitGrid(); });
+gridColsPlusBtn?.addEventListener('click', () => { adjustNumberInput(gridColsInput, +1, 1); void submitGrid(); });
 
-async function nudge(dx, dy) {
-  const x = Number(regionXInput?.value || 0) + dx;
-  const y = Number(regionYInput?.value || 0) + dy;
-  await pushRegionUpdate(x, y);
-}
-
-async function nudgeSize(dw, dh) {
-  const x = Number(regionXInput?.value || 0);
-  const y = Number(regionYInput?.value || 0);
-  const w = Math.max(1, Number(regionWInput?.value || 0) + dw);
-  const h = Math.max(1, Number(regionHInput?.value || 0) + dh);
-  await pushRegionUpdate(x, y, w, h);
-}
-
-nudgeUpBtn.addEventListener('click', async () => { try { await nudge(0, -2); } catch {} });
-nudgeDownBtn.addEventListener('click', async () => { try { await nudge(0, 2); } catch {} });
-nudgeLeftBtn.addEventListener('click', async () => { try { await nudge(-2, 0); } catch {} });
-nudgeRightBtn.addEventListener('click', async () => { try { await nudge(2, 0); } catch {} });
-wPlusBtn.addEventListener('click', async () => { try { await nudgeSize(2, 0); } catch {} });
-wMinusBtn.addEventListener('click', async () => { try { await nudgeSize(-2, 0); } catch {} });
-hPlusBtn.addEventListener('click', async () => { try { await nudgeSize(0, 2); } catch {} });
-hMinusBtn.addEventListener('click', async () => { try { await nudgeSize(0, -2); } catch {} });
+// Immediate region updates.
+regionXInput?.addEventListener('change', () => { void submitRegion(); });
+regionYInput?.addEventListener('change', () => { void submitRegion(); });
+regionWInput?.addEventListener('change', () => { void submitRegion(); });
+regionHInput?.addEventListener('change', () => { void submitRegion(); });
+regionXMinusBtn?.addEventListener('click', () => { adjustNumberInput(regionXInput, -2, null); void submitRegion(); });
+regionXPlusBtn?.addEventListener('click', () => { adjustNumberInput(regionXInput, +2, null); void submitRegion(); });
+regionYMinusBtn?.addEventListener('click', () => { adjustNumberInput(regionYInput, -2, null); void submitRegion(); });
+regionYPlusBtn?.addEventListener('click', () => { adjustNumberInput(regionYInput, +2, null); void submitRegion(); });
+regionWMinusBtn?.addEventListener('click', () => { adjustNumberInput(regionWInput, -2, 1); void submitRegion(); });
+regionWPlusBtn?.addEventListener('click', () => { adjustNumberInput(regionWInput, +2, 1); void submitRegion(); });
+regionHMinusBtn?.addEventListener('click', () => { adjustNumberInput(regionHInput, -2, 1); void submitRegion(); });
+regionHPlusBtn?.addEventListener('click', () => { adjustNumberInput(regionHInput, +2, 1); void submitRegion(); });
 
 async function initUi() {
   try {
     const ui = await fetchJson(UI_URL);
-    applyUiValues(ui);
+    applyUiValues(ui, { initOnly: true });
   } catch {
     setToggleCheckedFromServer(true);
     setOverlayToggleCheckedFromServer(false);

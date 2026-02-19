@@ -246,7 +246,6 @@ canvas#tilesHeatmap {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-left: 4px;
 }
 
 .btn-mini {
@@ -254,4 +253,16 @@ canvas#tilesHeatmap {
   border-radius: 8px;
   font-size: 12px;
   font-weight: 700;
+}
+
+
+/* hide number spinners */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
 }

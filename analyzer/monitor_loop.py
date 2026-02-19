@@ -35,7 +35,6 @@ from typing import Callable, Deque, Dict, List, Optional, Tuple, Set
 import numpy as np
 
 from analyzer.capture import Region, ScreenCapturer
-from analyzer.audio_meter import AudioMeter
 from analyzer.recorder import ClipRecorder, RecorderConfig
 from server.status_store import StatusStore
 
@@ -294,19 +293,16 @@ class MonitorLoop:
                 stop_grace_seconds=int(getattr(params, "record_stop_grace_seconds", 10)),
             )
         )
-        self._audio = AudioMeter()
 
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
             return
         self._stop.clear()
-        self._audio.start()
         self._thread = threading.Thread(target=self._run, name="motiondetector-monitor", daemon=True)
         self._thread.start()
 
     def stop(self) -> None:
         self._stop.set()
-        self._audio.stop()
 
     def join(self, timeout: float) -> None:
         if self._thread is not None:
@@ -387,7 +383,8 @@ class MonitorLoop:
     def _process_frame(self, *, frame: np.ndarray, ts: float, region: Region) -> Dict:
         gray_full = _to_gray_u8(frame)
 
-        rows, cols = self._store.get_grid()
+        rows = int(self._params.grid_rows)
+        cols = int(self._params.grid_cols)
         n_tiles = rows * cols
 
         gray, _inset_rect = _apply_inset(gray_full, int(getattr(self._params, "analysis_inset_px", 10)))
@@ -458,8 +455,6 @@ class MonitorLoop:
         enabled_count = len(enabled_tiles_norm)
         all_tiles_disabled = enabled_count == 0
 
-        audio = self._audio.get_level()
-
         if all_tiles_disabled:
             self._ema_activity = 0.0
             self._no_motion_votes.clear()
@@ -470,7 +465,6 @@ class MonitorLoop:
             motion_instant_mean = 0.0
             motion_instant_top1 = 0.0
             motion_instant_activity = 0.0
-            video_state = "ALL_TILES_DISABLED"
         else:
             motion_instant_mean = float(sum(enabled_tiles_norm) / float(enabled_count))
             motion_instant_top1 = _topk_mean(enabled_tiles_norm, 1)
@@ -485,11 +479,11 @@ class MonitorLoop:
                 no_motion_candidate=no_motion_candidate,
             )
             if state_with_grace == "NO_MOTION":
-                motion_state = "NO_MOTION"
+                video_state = "NO_MOTION"
             elif self._ema_activity < float(self._params.low_activity_threshold):
-                motion_state = "LOW_ACTIVITY"
+                video_state = "LOW_ACTIVITY"
             else:
-                motion_state = "MOTION"
+                video_state = "MOTION"
 
             confidence = _confidence_from_thresholds(
                 ema_activity=self._ema_activity,
@@ -497,15 +491,8 @@ class MonitorLoop:
                 low_thr=float(self._params.low_activity_threshold),
             )
 
-            overall_state = "OK" if motion_state == "MOTION" else "NOT_OK"
-            overall_reasons = [] if motion_state == "MOTION" else ["no_motion_enabled_tiles"]
-
-            if audio.available:
-                has_audio = max(audio.left, audio.right) > 1.0
-                suffix = "WITH_AUDIO" if has_audio else "NO_AUDIO"
-                video_state = f"{motion_state}_{suffix}"
-            else:
-                video_state = f"{motion_state}_NOSOUNDHARDWARE"
+            overall_state = "OK" if video_state == "MOTION" else "NOT_OK"
+            overall_reasons = [] if video_state == "MOTION" else ["no_motion_enabled_tiles"]
 
         tiles_for_json: List[Optional[float]] = [float(v) for v in tiles_norm_full]
         for i in disabled_set:
@@ -529,7 +516,6 @@ class MonitorLoop:
             errors=[],
             stale=False,
             stale_age_sec=0.0,
-            audio=audio,
         )
 
         if not all_tiles_disabled:
@@ -560,7 +546,6 @@ class MonitorLoop:
         errors: List[str],
         stale: bool,
         stale_age_sec: float,
-        audio,
     ) -> Dict:
         tiles_list: List[Optional[float]] = [float(x) if x is not None else None for x in tiles]
 
@@ -579,12 +564,6 @@ class MonitorLoop:
                 "disabled_tiles": [int(i) for i in disabled_tiles],
                 "stale": bool(stale),
                 "stale_age_sec": float(stale_age_sec),
-            },
-            "audio": {
-                "available": bool(audio.available),
-                "left": float(audio.left),
-                "right": float(audio.right),
-                "reason": str(audio.reason),
             },
             "overall": {"state": str(overall_state), "reasons": list(overall_reasons)},
             "errors": list(errors),
@@ -610,7 +589,6 @@ class MonitorLoop:
                 "stale": True,
                 "stale_age_sec": 0.0,
             },
-            "audio": {"available": False, "left": 0.0, "right": 0.0, "reason": "unavailable"},
             "overall": {"state": "NOT_OK", "reasons": ["capture_error"]},
             "errors": [str(reason)],
             "region": {"x": int(region.x), "y": int(region.y), "width": int(region.width), "height": int(region.height)},

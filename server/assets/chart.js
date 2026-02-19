@@ -14,22 +14,6 @@ import { clamp01 } from './utils.js';
  * - Stable scale: y-axis is clamped to [0..1] to match normalized motion metrics.
  */
 export function drawChart(canvas, historyPayloads) {
-  drawSeriesChart(canvas, historyPayloads, p => Number(p?.video?.motion_mean) || 0, 'Collecting history…');
-}
-
-export function drawAudioChart(canvas, historyPayloads) {
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-  drawSeriesChart(
-    canvas,
-    historyPayloads,
-    p => ({ left: (Number(p?.audio?.left) || 0) / 100, right: (Number(p?.audio?.right) || 0) / 100 }),
-    'Collecting audio history…',
-    true,
-  );
-}
-
-function drawSeriesChart(canvas, historyPayloads, mapper, emptyText, stereo = false) {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
@@ -48,13 +32,7 @@ function drawSeriesChart(canvas, historyPayloads, mapper, emptyText, stereo = fa
   // - y is video.motion_mean clamped into [0..1]
   // - sort by timestamp so out-of-order history still draws correctly
   const pts = (historyPayloads || [])
-    .map(p => {
-      const mapped = mapper(p);
-      if (stereo) {
-        return { t: Number(p.timestamp) || 0, l: clamp01(mapped.left), r: clamp01(mapped.right) };
-      }
-      return { t: Number(p.timestamp) || 0, y: clamp01(mapped) };
-    })
+    .map(p => ({ t: Number(p.timestamp) || 0, y: clamp01(Number(p?.video?.motion_mean) || 0) }))
     .filter(p => p.t > 0)
     .sort((a, b) => a.t - b.t);
 
@@ -77,10 +55,10 @@ function drawSeriesChart(canvas, historyPayloads, mapper, emptyText, stereo = fa
   if (pts.length < 2) {
     ctx.fillStyle = 'rgba(255,255,255,0.55)';
     ctx.font = '16px system-ui';
-    ctx.fillText(emptyText, 16, 28);
+    ctx.fillText('Collecting history…', 16, 28);
 
     if (pts.length === 1) {
-      const y1 = (h - 20) - (stereo ? pts[0].l : pts[0].y) * (h - 40);
+      const y1 = (h - 20) - pts[0].y * (h - 40);
       ctx.fillStyle = 'rgba(120, 190, 255, 0.95)';
       ctx.beginPath();
       ctx.arc(40, y1, 3, 0, Math.PI * 2);
@@ -106,23 +84,11 @@ function drawSeriesChart(canvas, historyPayloads, mapper, emptyText, stereo = fa
   ctx.beginPath();
   for (let i = 0; i < pts.length; i++) {
     const x = 40 + ((pts[i].t - tMin) / tSpan) * (w - 50);
-    const y = (h - 20) - (stereo ? pts[i].l : pts[i].y) * (h - 40);
+    const y = (h - 20) - pts[i].y * (h - 40);
     if (i === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   }
   ctx.stroke();
-
-  if (stereo) {
-    ctx.strokeStyle = 'rgba(255, 170, 90, 0.95)';
-    ctx.beginPath();
-    for (let i = 0; i < pts.length; i++) {
-      const x = 40 + ((pts[i].t - tMin) / tSpan) * (w - 50);
-      const y = (h - 20) - pts[i].r * (h - 40);
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-  }
 
   // Minimal y-axis labels (fixed because the scale is fixed [0..1]).
   ctx.fillStyle = 'rgba(255,255,255,0.55)';

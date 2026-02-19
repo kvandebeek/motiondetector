@@ -8,7 +8,6 @@ export const HISTORY_URL = '/history';
 // UI endpoints (HTML / UI helper pages).
 export const UI_URL = '/ui';
 export const TILE_NUMBERS_URL = '/ui/tile-numbers';
-export const GRID_URL = '/ui/grid';
 
 // Tile mask endpoints (get current disabled tiles / update them).
 // Intentionally separate constants even if the paths match, so call sites remain explicit.

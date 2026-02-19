@@ -56,7 +56,7 @@ class StatusStore:
       - The store accepts arbitrary payload dicts but normalizes at read time.
     """
 
-    def __init__(self, history_seconds: float, *, grid_rows: int, grid_cols: int, show_tile_numbers: bool = True) -> None:
+    def __init__(self, history_seconds: float, *, grid_rows: int, grid_cols: int) -> None:
         self._history_seconds = float(history_seconds)
         self._lock = threading.Lock()
 
@@ -69,7 +69,7 @@ class StatusStore:
             reason="not_initialized",
             grid_rows=self._grid_rows,
             grid_cols=self._grid_cols,
-            show_tile_numbers=bool(show_tile_numbers),
+            show_tile_numbers=True,
         )
 
         # Rolling window of samples for the chart/history endpoint.
@@ -79,7 +79,7 @@ class StatusStore:
         self._quit_requested = False
 
         # Single source of truth for tile-number visibility across overlay + heatmap.
-        self._show_tile_numbers = bool(show_tile_numbers)
+        self._show_tile_numbers = True
 
         # 0-based tile indices disabled via web UI clicks.
         self._disabled_tiles: list[int] = []
@@ -292,20 +292,7 @@ class StatusStore:
         Kept as a dict to allow future settings without changing the route surface.
         """
         with self._lock:
-            return {
-                "show_tile_numbers": bool(self._show_tile_numbers),
-                "grid_rows": int(self._grid_rows),
-                "grid_cols": int(self._grid_cols),
-            }
-
-    def set_grid(self, *, rows: int, cols: int) -> None:
-        with self._lock:
-            self._grid_rows = max(1, int(rows))
-            self._grid_cols = max(1, int(cols))
-
-    def get_grid(self) -> tuple[int, int]:
-        with self._lock:
-            return int(self._grid_rows), int(self._grid_cols)
+            return {"show_tile_numbers": bool(self._show_tile_numbers)}
 
     # ----------------------------
     # Tile mask (disabled tiles)
@@ -403,7 +390,6 @@ class StatusStore:
                 "stale_age_sec": 0.0,
             },
             "ui": {"show_tile_numbers": bool(show_tile_numbers)},
-            "audio": {"available": False, "left": 0.0, "right": 0.0, "reason": "not_initialized"},
             "overall": {"state": "NOT_OK", "reasons": [str(reason)]},
             "errors": [str(reason)],
             "region": {"x": 0, "y": 0, "width": 0, "height": 0},

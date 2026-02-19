@@ -112,7 +112,7 @@ class ClipRecorder:
         # - While in trigger_state, keep recording and cancel any stop deadline.
         # - When leaving trigger_state, arm a stop deadline (grace period).
         # - If the grace period elapses, stop the recording.
-        if self._state_matches_trigger(state):
+        if state == self._cfg.trigger_state:
             self._stop_deadline_ts = None
         else:
             if self._stop_deadline_ts is None:
@@ -133,7 +133,7 @@ class ClipRecorder:
         - a usable VideoWriter can be opened for at least one supported codec/container
         """
         # Only start recording when the state matches the configured trigger.
-        if not self._state_matches_trigger(state):
+        if state != self._cfg.trigger_state:
             return
 
         # Already recording.
@@ -245,10 +245,3 @@ class ClipRecorder:
             return None
 
         return writer
-
-    def _state_matches_trigger(self, state: str) -> bool:
-        s = str(state)
-        trig = str(self._cfg.trigger_state)
-        if s == trig:
-            return True
-        return s.startswith(f"{trig}_")

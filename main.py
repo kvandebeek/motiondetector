@@ -24,7 +24,7 @@ from typing import Any
 from analyzer.capture import Region, ScreenCapturer
 from analyzer.monitor_loop import DetectionParams, MonitorLoop
 from analyzer.monitor_windows import set_process_dpi_awareness
-from config.config import load_config, patch_runtime_ui_motion_config
+from config.config import load_config
 from server.server import run_server_in_thread
 from server.status_store import StatusStore
 from ui.selector.ui_logic import run_selector_ui
@@ -92,16 +92,10 @@ def main() -> int:
         history_seconds=cfg.history_seconds,
         grid_rows=cfg.grid_rows,
         grid_cols=cfg.grid_cols,
-        show_tile_numbers=cfg.show_tile_numbers,
     )
 
     # Start FastAPI/uvicorn server in a background thread.
-    _server_thread = run_server_in_thread(
-        host=cfg.server_host,
-        port=cfg.server_port,
-        store=store,
-        on_settings_changed=lambda **kwargs: patch_runtime_ui_motion_config("./config/config.json", **kwargs),
-    )
+    _server_thread = run_server_in_thread(host=cfg.server_host, port=cfg.server_port, store=store)
 
     # If server binds to 0.0.0.0, UI cannot call "http://0.0.0.0:PORT"; use loopback instead.
     server_host_for_ui = "127.0.0.1" if cfg.server_host == "0.0.0.0" else str(cfg.server_host)
@@ -298,7 +292,7 @@ def main() -> int:
         # Here it’s aligned with analysis_inset_px (inset inside the selected region).
         emit_inset_px=int(getattr(cfg, "analysis_inset_px", 0)),
         tile_label_text_color="#FFFFFF",
-        show_tile_numbers=bool(cfg.show_tile_numbers),
+        show_tile_numbers=True,
         server_base_url_override=server_base_url,
         tiles_poll_ms=500,
         http_timeout_sec=0.35,

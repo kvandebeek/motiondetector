@@ -35,6 +35,8 @@ class AppConfig:
         "diff_gain": 1.0,
         "no_motion_threshold": 0.02,
         "low_activity_threshold": 0.06,
+        "no_motion_grace_period_seconds": 1.0,
+        "no_motion_grace_required_ratio": 0.8,
         "ema_alpha": 0.2,
         "history_seconds": 10,
         "mean_full_scale": 0.5,
@@ -75,6 +77,8 @@ class AppConfig:
     diff_gain: float
     no_motion_threshold: float
     low_activity_threshold: float
+    no_motion_grace_period_seconds: float
+    no_motion_grace_required_ratio: float
     ema_alpha: float
 
     history_seconds: float
@@ -247,7 +251,20 @@ def load_config(path: str) -> AppConfig:
     diff_gain = _require_num(motion.get("diff_gain"), "motion.diff_gain")
     no_motion_threshold = _require_num(motion.get("no_motion_threshold"), "motion.no_motion_threshold")
     low_activity_threshold = _require_num(motion.get("low_activity_threshold"), "motion.low_activity_threshold")
+    no_motion_grace_period_seconds = _require_num(
+        motion.get("no_motion_grace_period_seconds", 0.0),
+        "motion.no_motion_grace_period_seconds",
+    )
+    no_motion_grace_required_ratio = _require_num(
+        motion.get("no_motion_grace_required_ratio", 1.0),
+        "motion.no_motion_grace_required_ratio",
+    )
     ema_alpha = _require_num(motion.get("ema_alpha"), "motion.ema_alpha")
+
+    if no_motion_grace_period_seconds < 0.0:
+        raise ValueError("motion.no_motion_grace_period_seconds must be >= 0")
+    if not (0.0 <= no_motion_grace_required_ratio <= 1.0):
+        raise ValueError("motion.no_motion_grace_required_ratio must be in [0, 1]")
 
     history_seconds = _require_num(motion.get("history_seconds"), "motion.history_seconds")
     mean_full_scale = _require_num(motion.get("mean_full_scale"), "motion.mean_full_scale")
@@ -301,6 +318,8 @@ def load_config(path: str) -> AppConfig:
         diff_gain=diff_gain,
         no_motion_threshold=no_motion_threshold,
         low_activity_threshold=low_activity_threshold,
+        no_motion_grace_period_seconds=no_motion_grace_period_seconds,
+        no_motion_grace_required_ratio=no_motion_grace_required_ratio,
         ema_alpha=ema_alpha,
         history_seconds=history_seconds,
         mean_full_scale=mean_full_scale,

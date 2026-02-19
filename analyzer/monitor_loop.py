@@ -29,7 +29,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import threading
 import time
-from typing import Callable, Dict, List, Optional, Tuple, Set
+from collections import deque
+from typing import Callable, Deque, Dict, List, Optional, Tuple, Set
 
 import numpy as np
 
@@ -54,6 +55,8 @@ class DetectionParams:
     diff_gain: float
     no_motion_threshold: float
     low_activity_threshold: float
+    no_motion_grace_period_seconds: float
+    no_motion_grace_required_ratio: float
     ema_alpha: float
 
     mean_full_scale: float
@@ -277,6 +280,7 @@ class MonitorLoop:
         self._ema_activity: float = 0.0
         self._last_update_ts: float = 0.0
         self._prev_state: str = "ERROR"
+        self._no_motion_votes: Deque[Tuple[float, bool]] = deque()
 
         self._recorder = ClipRecorder(
             RecorderConfig(
@@ -354,6 +358,28 @@ class MonitorLoop:
                     out.append(v)
         return sorted(set(out))
 
+    def _resolve_video_state_with_grace(self, *, ts: float, no_motion_candidate: bool) -> str:
+        grace_period = max(0.0, float(getattr(self._params, "no_motion_grace_period_seconds", 0.0)))
+        required_ratio = float(getattr(self._params, "no_motion_grace_required_ratio", 1.0))
+        required_ratio = _clamp01(required_ratio)
+
+        if grace_period <= 0.0:
+            return "NO_MOTION" if no_motion_candidate else "MOTION_OR_LOW"
+
+        self._no_motion_votes.append((float(ts), bool(no_motion_candidate)))
+        cutoff = float(ts) - grace_period
+        while self._no_motion_votes and self._no_motion_votes[0][0] < cutoff:
+            self._no_motion_votes.popleft()
+
+        window_count = len(self._no_motion_votes)
+        if window_count == 0:
+            return "MOTION_OR_LOW"
+
+        no_motion_count = sum(1 for _, vote in self._no_motion_votes if vote)
+        if (float(no_motion_count) / float(window_count)) >= required_ratio:
+            return "NO_MOTION"
+        return "MOTION_OR_LOW"
+
     def _process_frame(self, *, frame: np.ndarray, ts: float, region: Region) -> Dict:
         gray_full = _to_gray_u8(frame)
 
@@ -371,6 +397,7 @@ class MonitorLoop:
             self._last_update_ts = ts
             self._prev_state = "ERROR"
             self._ema_activity = 0.0
+            self._no_motion_votes.clear()
 
             tiles_init: List[Optional[float]] = [0.0] * n_tiles
             for i in disabled_set:
@@ -430,6 +457,7 @@ class MonitorLoop:
 
         if all_tiles_disabled:
             self._ema_activity = 0.0
+            self._no_motion_votes.clear()
             video_state = "ALL_TILES_DISABLED"
             confidence = 0.0
             overall_state = "OK"
@@ -445,7 +473,12 @@ class MonitorLoop:
             a = float(self._params.ema_alpha)
             self._ema_activity = (a * motion_instant_activity) + ((1.0 - a) * self._ema_activity)
 
-            if self._ema_activity < float(self._params.no_motion_threshold):
+            no_motion_candidate = self._ema_activity < float(self._params.no_motion_threshold)
+            state_with_grace = self._resolve_video_state_with_grace(
+                ts=ts,
+                no_motion_candidate=no_motion_candidate,
+            )
+            if state_with_grace == "NO_MOTION":
                 video_state = "NO_MOTION"
             elif self._ema_activity < float(self._params.low_activity_threshold):
                 video_state = "LOW_ACTIVITY"

@@ -21,7 +21,7 @@ import threading
 import traceback
 from typing import Any
 
-from analyzer.capture import Region, ScreenCapturer
+from analyzer.capture import Region, ScreenCapturer, clamp_region_to_virtual_bounds, list_mss_monitors, monitor_id_for_region
 from analyzer.monitor_loop import DetectionParams, MonitorLoop
 from analyzer.monitor_windows import set_process_dpi_awareness
 from config.config import load_config, patch_runtime_ui_motion_config
@@ -84,6 +84,17 @@ def main() -> int:
     # Configuration for server, capture, detection thresholds, initial overlay geometry, etc.
     cfg = load_config("./config/config.json")
 
+    monitors = list_mss_monitors()
+    initial_region = clamp_region_to_virtual_bounds(
+        Region(
+            x=int(cfg.initial_region["x"]),
+            y=int(cfg.initial_region["y"]),
+            width=int(cfg.initial_region["width"]),
+            height=int(cfg.initial_region["height"]),
+        ),
+        monitors=monitors,
+    )
+
     # Store holds latest payload + history and is shared by:
     # - monitor loop thread (writer)
     # - HTTP server (reader)
@@ -94,10 +105,12 @@ def main() -> int:
         grid_cols=cfg.grid_cols,
         show_tile_numbers=cfg.show_tile_numbers,
         show_overlay_state=bool(getattr(cfg, "show_overlay_state", False)),
-        region_x=int(cfg.initial_region["x"]),
-        region_y=int(cfg.initial_region["y"]),
-        region_width=int(cfg.initial_region["width"]),
-        region_height=int(cfg.initial_region["height"]),
+        region_x=int(initial_region.x),
+        region_y=int(initial_region.y),
+        region_width=int(initial_region.width),
+        region_height=int(initial_region.height),
+        monitors=monitors,
+        current_monitor_id=monitor_id_for_region(monitors=monitors, region=initial_region),
     )
 
     # Start FastAPI/uvicorn server in a background thread.
@@ -117,10 +130,10 @@ def main() -> int:
     shared = SharedRegion(
         lock=threading.Lock(),
         region=Region(
-            x=int(cfg.initial_region["x"]),
-            y=int(cfg.initial_region["y"]),
-            width=int(cfg.initial_region["width"]),
-            height=int(cfg.initial_region["height"]),
+            x=int(initial_region.x),
+            y=int(initial_region.y),
+            width=int(initial_region.width),
+            height=int(initial_region.height),
         ),
     )
 
@@ -168,14 +181,23 @@ def main() -> int:
         """
         with shared.lock:
             shared.region = r
+
+    def on_window_geometry_change(x: int, y: int, width: int, height: int) -> None:
+        region_for_ui = Region(x=int(x), y=int(y), width=max(1, int(width)), height=max(1, int(height)))
         try:
-            store.set_region(x=int(r.x), y=int(r.y), width=int(r.width), height=int(r.height))
+            store.set_region(
+                x=int(region_for_ui.x),
+                y=int(region_for_ui.y),
+                width=int(region_for_ui.width),
+                height=int(region_for_ui.height),
+            )
+            store.set_current_monitor_id(monitor_id_for_region(monitors=monitors, region=region_for_ui))
             patch_runtime_ui_motion_config(
                 "./config/config.json",
-                region_x=int(r.x),
-                region_y=int(r.y),
-                region_width=int(r.width),
-                region_height=int(r.height),
+                region_x=int(region_for_ui.x),
+                region_y=int(region_for_ui.y),
+                region_width=int(region_for_ui.width),
+                region_height=int(region_for_ui.height),
             )
         except Exception:
             traceback.print_exc()
@@ -313,10 +335,10 @@ def main() -> int:
     # This call blocks until the window closes / app quits.
     run_selector_ui(
         initial=UiRegion(
-            x=int(cfg.initial_region["x"]),
-            y=int(cfg.initial_region["y"]),
-            width=int(cfg.initial_region["width"]),
-            height=int(cfg.initial_region["height"]),
+            x=int(initial_region.x),
+            y=int(initial_region.y),
+            width=int(initial_region.width),
+            height=int(initial_region.height),
         ),
         border_px=int(cfg.border_px),
         grid_line_px=int(cfg.grid_line_px),
@@ -334,6 +356,7 @@ def main() -> int:
         server_base_url_override=server_base_url,
         tiles_poll_ms=500,
         http_timeout_sec=0.35,
+        on_window_geometry_change=on_window_geometry_change,
         on_window_ready=on_window_ready,
     )
 

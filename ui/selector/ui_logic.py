@@ -31,6 +31,7 @@ def run_selector_ui(
     server_base_url_override: Optional[str] = None,
     tiles_poll_ms: int = 500,
     http_timeout_sec: float = 0.35,
+    on_window_geometry_change: Optional[Callable[[int, int, int, int], None]] = None,
     on_window_ready: Optional[Callable[[QApplication, SelectorWindow], None]] = None,
 ) -> None:
     """
@@ -76,6 +77,7 @@ def run_selector_ui(
         chrome_bar_h_px=45,
         ui_settings_url=ui_settings_url,
         ui_poll_ms=250,
+        on_window_geometry_change=on_window_geometry_change,
     )
     w.show()
 

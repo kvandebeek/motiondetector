@@ -68,6 +68,8 @@ class StatusStore:
         region_y: int = 0,
         region_width: int = 640,
         region_height: int = 480,
+        monitors: list[dict[str, int]] | None = None,
+        current_monitor_id: int = 0,
     ) -> None:
         self._history_seconds = float(history_seconds)
         self._lock = threading.Lock()
@@ -98,6 +100,9 @@ class StatusStore:
         self._region_y = int(region_y)
         self._region_width = max(1, int(region_width))
         self._region_height = max(1, int(region_height))
+
+        self._monitors = [dict(m) for m in (monitors or []) if isinstance(m, dict)]
+        self._current_monitor_id = int(current_monitor_id)
 
         # 0-based tile indices disabled via web UI clicks.
         self._disabled_tiles: list[int] = []
@@ -320,6 +325,8 @@ class StatusStore:
                 "region_width": int(self._region_width),
                 "region_height": int(self._region_height),
                 "current_state": self._current_state_locked(),
+                "monitors": [dict(m) for m in self._monitors],
+                "current_monitor_id": int(self._current_monitor_id),
             }
 
     def set_show_overlay_state(self, enabled: bool) -> None:
@@ -333,9 +340,31 @@ class StatusStore:
             self._region_width = max(1, int(width))
             self._region_height = max(1, int(height))
 
+            cx = self._region_x + max(1, self._region_width) // 2
+            cy = self._region_y + max(1, self._region_height) // 2
+            for m in self._monitors:
+                mid = int(m.get("id", 0))
+                if mid <= 0:
+                    continue
+                left = int(m.get("left", 0))
+                top = int(m.get("top", 0))
+                width_m = int(m.get("width", 0))
+                height_m = int(m.get("height", 0))
+                if left <= cx < left + width_m and top <= cy < top + height_m:
+                    self._current_monitor_id = mid
+                    break
+
     def get_region(self) -> tuple[int, int, int, int]:
         with self._lock:
             return (int(self._region_x), int(self._region_y), int(self._region_width), int(self._region_height))
+
+    def set_monitors(self, monitors: list[dict[str, int]]) -> None:
+        with self._lock:
+            self._monitors = [dict(m) for m in monitors if isinstance(m, dict)]
+
+    def set_current_monitor_id(self, monitor_id: int) -> None:
+        with self._lock:
+            self._current_monitor_id = int(monitor_id)
 
     def _current_state_locked(self) -> str:
         payload = self._latest

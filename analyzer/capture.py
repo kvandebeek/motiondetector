@@ -91,6 +91,63 @@ def _pick_monitor_id(monitors: list[Dict[str, int]], r: Region) -> int:
     return 0
 
 
+
+
+def list_mss_monitors() -> list[dict[str, int]]:
+    """Return MSS monitor rectangles including virtual desktop (index 0)."""
+    try:
+        with mss.mss() as sct:
+            mons = list(sct.monitors)
+    except Exception:
+        return []
+
+    out: list[dict[str, int]] = []
+    for i, m in enumerate(mons):
+        out.append({
+            "id": int(i),
+            "left": int(m.get("left", 0)),
+            "top": int(m.get("top", 0)),
+            "width": int(m.get("width", 0)),
+            "height": int(m.get("height", 0)),
+        })
+    return out
+
+
+def monitor_id_for_region(*, monitors: list[dict[str, int]], region: Region) -> int:
+    """Pick monitor index whose bounds contain the region center (falls back to 0)."""
+    if not monitors:
+        return 0
+    cx, cy = _region_center(region)
+    for m in monitors:
+        i = int(m.get("id", 0))
+        if i <= 0:
+            continue
+        left = int(m.get("left", 0))
+        top = int(m.get("top", 0))
+        width = int(m.get("width", 0))
+        height = int(m.get("height", 0))
+        if left <= cx < left + width and top <= cy < top + height:
+            return i
+    return 0
+
+
+def clamp_region_to_virtual_bounds(region: Region, *, monitors: list[dict[str, int]]) -> Region:
+    """Clamp region to virtual monitor bounds (monitor id 0) and enforce positive size."""
+    if not monitors:
+        return Region(x=int(region.x), y=int(region.y), width=max(1, int(region.width)), height=max(1, int(region.height)))
+
+    virt = next((m for m in monitors if int(m.get("id", -1)) == 0), monitors[0])
+    vleft = int(virt.get("left", 0))
+    vtop = int(virt.get("top", 0))
+    vright = vleft + max(1, int(virt.get("width", 1)))
+    vbottom = vtop + max(1, int(virt.get("height", 1)))
+
+    x = _clamp_int(int(region.x), vleft, vright - 1)
+    y = _clamp_int(int(region.y), vtop, vbottom - 1)
+    x2 = _clamp_int(int(region.x) + max(1, int(region.width)), x + 1, vright)
+    y2 = _clamp_int(int(region.y) + max(1, int(region.height)), y + 1, vbottom)
+    return Region(x=x, y=y, width=max(1, x2 - x), height=max(1, y2 - y))
+
 class ScreenCapturer:
     """
     Capture frames from a region.

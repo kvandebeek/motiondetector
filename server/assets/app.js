@@ -23,6 +23,7 @@ const pillVideo = document.getElementById('pillVideo');
 const pillMean = document.getElementById('pillMean');
 const pillOverall = document.getElementById('pillOverall');
 const gridLabel = document.getElementById('gridLabel');
+const monitorInfo = document.getElementById('monitorInfo');
 
 const copyBtn = document.getElementById('copyJson');
 const quitBtn = document.getElementById('quitBtn');
@@ -76,6 +77,26 @@ function statusForDisplay(payload) {
   return { ...payload, video: { ...payload.video, tiles: tiles.map((v) => (v === null ? 'disabled' : v)) } };
 }
 
+
+
+function renderMonitorInfo(ui) {
+  if (!monitorInfo) return;
+  const monitors = Array.isArray(ui?.monitors) ? ui.monitors : [];
+  const currentId = Number(ui?.current_monitor_id ?? 0);
+  if (!monitors.length) {
+    monitorInfo.textContent = 'monitor: unavailable';
+    return;
+  }
+
+  const current = monitors.find((m) => Number(m?.id) === currentId) || monitors[0];
+  const id = Number(current?.id ?? 0);
+  const left = Number(current?.left ?? 0);
+  const top = Number(current?.top ?? 0);
+  const width = Number(current?.width ?? 0);
+  const height = Number(current?.height ?? 0);
+  monitorInfo.textContent = `monitor: ${id} (${left},${top}) ${width}x${height}`;
+}
+
 function applyUiValues(ui) {
   if (!ui || typeof ui !== 'object') return;
   if (gridRowsInput && ui.grid_rows) gridRowsInput.value = String(ui.grid_rows);
@@ -86,6 +107,7 @@ function applyUiValues(ui) {
   if (regionHInput && Number.isFinite(ui.region_height)) regionHInput.value = String(ui.region_height);
   setToggleCheckedFromServer(ui.show_tile_numbers);
   setOverlayToggleCheckedFromServer(ui.show_overlay_state);
+  renderMonitorInfo(ui);
 }
 
 function renderStatus(payload) {

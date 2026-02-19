@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Callable, Optional
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtGui import QColor, QPainter, QPen, QMoveEvent, QResizeEvent
 from PySide6.QtWidgets import QApplication, QWidget
 
 from analyzer.capture import Region
@@ -65,11 +65,13 @@ class SelectorWindow(QWidget):
         chrome_bar_h_px: int = 20,
         ui_settings_url: Optional[str] = None,
         ui_poll_ms: int = 250,
+        on_window_geometry_change: Optional[Callable[[int, int, int, int], None]] = None,
     ) -> None:
         super().__init__()
 
         # External callback invoked when the window is closed (by user or program).
         self._on_close = on_close
+        self._on_window_geometry_change = on_window_geometry_change
 
         # Local visual state; can be updated by UiSettingsPoller or programmatically.
         self._show_tile_numbers = bool(show_tile_numbers)
@@ -176,6 +178,7 @@ class SelectorWindow(QWidget):
 
         # Apply initial geometry and emit initial region right away.
         self.setGeometry(initial.x, initial.y, initial.width, initial.height)
+        self._notify_geometry_changed()
         self._region_emitter.emit(reason="init")
 
         # Local import avoids a module-level dependency chain in some setups.
@@ -231,11 +234,21 @@ class SelectorWindow(QWidget):
                     int(snapshot.region_width),
                     int(snapshot.region_height),
                 )
+                self._notify_geometry_changed()
                 self._region_emitter.emit(reason="ui-sync")
         except Exception:
             pass
 
         self.update()
+
+    def _notify_geometry_changed(self) -> None:
+        cb = self._on_window_geometry_change
+        if cb is None:
+            return
+        try:
+            cb(int(self.x()), int(self.y()), int(self.width()), int(self.height()))
+        except Exception:
+            pass
 
     def _handle_close(self) -> None:
         """
@@ -271,6 +284,14 @@ class SelectorWindow(QWidget):
         except Exception:
             pass
         return screen_name, screen_logical, screen_phys
+
+    def moveEvent(self, event: QMoveEvent) -> None:  # type: ignore[override]
+        _ = event
+        self._notify_geometry_changed()
+
+    def resizeEvent(self, event: QResizeEvent) -> None:  # type: ignore[override]
+        _ = event
+        self._notify_geometry_changed()
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         """

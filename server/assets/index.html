@@ -5,7 +5,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>motiondetector</title>
-  <link rel="stylesheet" href="/server/assets/styles.css" />
+  <link rel="stylesheet" href="/assets/styles.css" />
 </head>
 <body>
   <header>
@@ -57,13 +57,13 @@
     <section class="panel panel-heatmap">
       <h2><span>Tiles heatmap (0 → 1)</span></h2>
       <div class="heatwrap">
-        <canvas id="tilesHeatmap" width="540" height="540" aria-label="Tiles heatmap (click tile to disable/enable)"></canvas>
+        <canvas id="tilesHeatmap" width="900" height="540" aria-label="Tiles heatmap (click tile to disable/enable)"></canvas>
       </div>
       <div class="subtle" id="gridLabel" style="margin-top:10px;">grid: —</div>
       <div class="subtle" style="margin-top:6px;">Click a tile to disable/enable it (disabled tiles are excluded from measurements).</div>
     </section>
   </div>
 
-  <script type="module" src="/server/assets/app.js"></script>
+  <script type="module" src="/assets/app.js"></script>
 </body>
 </html>

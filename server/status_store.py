@@ -98,7 +98,11 @@ class StatusStore:
         """
         if not isinstance(payload, dict):
             raise TypeError("payload must be a dict")
-        ts = float(payload.get("timestamp", time.time()))
+        ts_raw = payload.get("timestamp", time.time())
+        try:
+            ts = float(ts_raw)
+        except (TypeError, ValueError):
+            ts = time.time()
         with self._lock:
             self._latest = payload
             self._history.append(StatusSample(ts=ts, payload=payload))
@@ -251,6 +255,13 @@ class StatusStore:
             pp["ui"] = ui
             out.append(pp)
         return out
+
+    def get_history_seconds(self) -> float:
+        """
+        Return the configured rolling history retention window in seconds.
+        """
+        with self._lock:
+            return float(self._history_seconds)
 
     # ----------------------------
     # UI settings

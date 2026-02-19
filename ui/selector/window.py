@@ -210,12 +210,25 @@ class SelectorWindow(QWidget):
         self.update()
 
 
+
+    def _apply_grid_size(self, *, rows: int, cols: int) -> None:
+        rr = max(1, int(rows))
+        cc = max(1, int(cols))
+        try:
+            object.__setattr__(self._grid, "grid_rows", rr)
+            object.__setattr__(self._grid, "grid_cols", cc)
+            object.__setattr__(self._painter._cfg, "grid_rows", rr)
+            object.__setattr__(self._painter._cfg, "grid_cols", cc)
+        except Exception:
+            return
+
     def apply_ui_settings(self, snapshot: object) -> None:
         if not isinstance(snapshot, UiSettingsSnapshot):
             return
         self.set_show_tile_numbers(bool(snapshot.show_tile_numbers))
         self._show_overlay_state = bool(snapshot.show_overlay_state)
         self._current_state = str(snapshot.current_state or "UNKNOWN")
+        self._apply_grid_size(rows=int(snapshot.grid_rows), cols=int(snapshot.grid_cols))
 
         try:
             gx = int(self.x())
@@ -287,11 +300,9 @@ class SelectorWindow(QWidget):
 
     def moveEvent(self, event: QMoveEvent) -> None:  # type: ignore[override]
         _ = event
-        self._notify_geometry_changed()
 
     def resizeEvent(self, event: QResizeEvent) -> None:  # type: ignore[override]
         _ = event
-        self._notify_geometry_changed()
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         """
@@ -377,6 +388,7 @@ class SelectorWindow(QWidget):
         """
         _ = event
         self._interact.on_mouse_release()
+        self._notify_geometry_changed()
 
     def _poll_tiles(self) -> None:
         """

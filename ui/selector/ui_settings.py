@@ -18,6 +18,8 @@ class UiSettingsSnapshot:
     region_y: int
     region_width: int
     region_height: int
+    grid_rows: int
+    grid_cols: int
     current_state: str
 
 
@@ -93,6 +95,8 @@ class UiSettingsPoller(QObject):
                 y = data.get("region_y")
                 w = data.get("region_width")
                 h = data.get("region_height")
+                grid_rows = data.get("grid_rows")
+                grid_cols = data.get("grid_cols")
                 state = data.get("current_state")
 
                 if not isinstance(show_numbers, bool):
@@ -111,6 +115,10 @@ class UiSettingsPoller(QObject):
                     w = 640
                 if not isinstance(h, int):
                     h = 480
+                if not isinstance(grid_rows, int):
+                    grid_rows = 1
+                if not isinstance(grid_cols, int):
+                    grid_cols = 1
                 if not isinstance(state, str):
                     state = "UNKNOWN"
 
@@ -121,6 +129,8 @@ class UiSettingsPoller(QObject):
                     region_y=int(y),
                     region_width=max(1, int(w)),
                     region_height=max(1, int(h)),
+                    grid_rows=max(1, int(grid_rows)),
+                    grid_cols=max(1, int(grid_cols)),
                     current_state=state,
                 )
                 if self._last_settings is None or snap != self._last_settings:

@@ -264,13 +264,13 @@ canvas#tilesHeatmap {
 
 .field {
   display: grid;
-  grid-template-columns: minmax(36px, auto) var(--ctl-h) 84px var(--ctl-h) minmax(78px, auto);
+  grid-template-columns: minmax(36px, auto) var(--ctl-h) 112px var(--ctl-h) minmax(78px, auto);
   align-items: center;
   column-gap: 10px;
 }
 
 .field-with-hint {
-  grid-template-columns: minmax(64px, auto) var(--ctl-h) 84px var(--ctl-h) minmax(78px, auto);
+  grid-template-columns: minmax(64px, auto) var(--ctl-h) 112px var(--ctl-h) minmax(78px, auto);
 }
 
 .label,
@@ -313,9 +313,22 @@ canvas#tilesHeatmap {
 
 .field input[type="number"] {
   height: var(--ctl-h);
+  width: 100%;
   border-radius: var(--ctl-radius);
   padding: 0 8px;
   box-sizing: border-box;
+}
+
+.panel-json {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+#jsonBox {
+  flex: 1;
+  min-height: 0;
+  height: auto;
 }
 
 #quitBtn {

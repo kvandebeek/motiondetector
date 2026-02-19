@@ -177,6 +177,8 @@ def main() -> int:
         diff_gain=float(cfg.diff_gain),
         no_motion_threshold=float(cfg.no_motion_threshold),
         low_activity_threshold=float(cfg.low_activity_threshold),
+        no_motion_grace_period_seconds=float(getattr(cfg, "no_motion_grace_period_seconds", 0.0)),
+        no_motion_grace_required_ratio=float(getattr(cfg, "no_motion_grace_required_ratio", 1.0)),
         ema_alpha=float(cfg.ema_alpha),
         mean_full_scale=float(cfg.mean_full_scale),
         tile_full_scale=float(cfg.tile_full_scale),

@@ -31,6 +31,11 @@ export function resizeHeatmapCanvas(canvas, region) {
   const desiredW = wrapW;
   const desiredH = Math.min(maxH, Math.round(desiredW / aspect));
 
+  // Keep CSS size explicit so backing-store updates do not influence layout width.
+  canvas.style.width = '100%';
+  canvas.style.maxWidth = '100%';
+  canvas.style.height = `${desiredH}px`;
+
   // Helps layout engines reserve the correct space even before the canvas is painted.
   canvas.style.aspectRatio = `${rw} / ${rh}`;
 

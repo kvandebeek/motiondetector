@@ -242,6 +242,7 @@ If `/status` returns `"audio.available": false` with `capture_failed:*`:
   - `python monitor_audio_output_loopback.py --device-index 13`
 
 Press `Ctrl+C` in that helper script (or in `python main.py`) to stop gracefully.
+Note: testing showed that a WASAPI device like "id=loopback::windows-wasapi::speakers-realtek-r-audio-loopback | name=Speakers (Realtek(R) Audio) [Loopback] | host_api=Windows WASAPI | in=2 | out=0 [loopback-like]" functions fine in most cases.
 
 ### High CPU
 - Lower `capture.fps`

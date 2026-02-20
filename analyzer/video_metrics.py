@@ -1,4 +1,3 @@
-# File commentary: analyzer/video_metrics.py - This file holds logic used by the motion detector project.
 from __future__ import annotations
 
 from typing import Dict, List, Optional, Tuple

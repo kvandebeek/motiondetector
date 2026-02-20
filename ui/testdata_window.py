@@ -1,5 +1,5 @@
-# File commentary: ui/testdata_window.py - This file holds logic used by the motion detector project.
-# ui/testdata_window.py
+"""ui/testdata_window.py module."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -50,29 +50,29 @@ class DetectorSnapshot:
 
 
 def _now_iso_utc() -> str:
-    """Handle now iso utc for this module."""
+    """Now iso utc."""
     return datetime.now(timezone.utc).isoformat()
 
 
 def _safe_float(x: Any) -> Optional[float]:
-    """Handle safe float for this module."""
+    """Safe float."""
     return float(x) if isinstance(x, (int, float)) else None
 
 
 def _safe_str(x: Any) -> Optional[str]:
-    """Handle safe str for this module."""
+    """Safe str."""
     return str(x) if x is not None else None
 
 
 def _safe_bool(x: Any) -> Optional[bool]:
-    """Handle safe bool for this module."""
+    """Safe bool."""
     if isinstance(x, bool):
         return x
     return None
 
 
 def _tiles_stats(tiles: Optional[Sequence[float]]) -> tuple[Optional[float], Optional[float], list[tuple[int, float]]]:
-    """Handle tiles stats for this module."""
+    """Tiles stats."""
     if tiles is None:
         return None, None, []
     vals: list[float] = []
@@ -145,7 +145,7 @@ class TestDataWindow(QWidget):
     # ----------------------------
 
     def _tick_frame(self) -> None:
-        """Tick frame for this module's workflow."""
+        """Frame."""
         self._frame_index += 1
 
         self._engine.set_size(w=self.width(), h=self.height())
@@ -155,7 +155,7 @@ class TestDataWindow(QWidget):
         self.update()
 
     def _poll_status(self) -> None:
-        """Poll status for this module's workflow."""
+        """Status."""
         if self._http is None or self._status_url is None:
             return
 
@@ -256,7 +256,7 @@ class TestDataWindow(QWidget):
             self._paint_hud(p, self._last, self._det)
 
     def _paint_subtitle(self, p: QPainter, sub: SubtitleOverlay) -> None:
-        """Handle paint subtitle for this module."""
+        """Paint subtitle."""
         p.save()
         p.setOpacity(float(sub.alpha))
 
@@ -271,7 +271,7 @@ class TestDataWindow(QWidget):
         p.restore()
 
     def _paint_hud(self, p: QPainter, last: FrameOut, det: DetectorSnapshot) -> None:
-        """Handle paint hud for this module."""
+        """Paint hud."""
         font = QFont()
         font.setPixelSize(14)
         font.setBold(True)
@@ -325,7 +325,7 @@ class TestDataWindow(QWidget):
     # ----------------------------
 
     def _write_detector_log_row(self) -> None:
-        """Write detector log row for this module's workflow."""
+        """Detector log row."""
         if self._last is None:
             return
 
@@ -366,7 +366,7 @@ class TestDataWindow(QWidget):
     # ----------------------------
 
     def _update_scene_stats_for_sample(self) -> None:
-        """Update scene stats for sample for this module's workflow."""
+        """Scene stats for sample."""
         if self._last is None:
             return
 

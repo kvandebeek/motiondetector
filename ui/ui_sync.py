@@ -1,5 +1,5 @@
-# File commentary: ui/ui_sync.py - This file holds logic used by the motion detector project.
-# ui/ui_sync.py
+"""ui/ui_sync.py helpers."""
+
 from __future__ import annotations
 
 import threading

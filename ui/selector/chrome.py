@@ -1,5 +1,5 @@
-# File commentary: ui/selector/chrome.py - This file holds logic used by the motion detector project.
-# ui/selector_chrome.py
+"""ui/selector/chrome.py helpers."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

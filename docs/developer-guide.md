@@ -1,58 +1,60 @@
 # Developer Guide
 
-This guide is intended for maintainers extending `motiondetector`.
+This guide is for contributors extending `motiondetector`.
 
 ## Repository map
 
-- `main.py` — runtime composition root and lifecycle orchestration.
-- `config/` — config schema and default JSON.
-- `analyzer/` — frame capture, motion analysis, normalization, recording.
-- `server/` — FastAPI app, static asset serving, shared status store.
-- `ui/` — Qt selector overlay and synchronization helpers.
-- `testdata/` — synthetic scene generator/trainer windows.
-- `docs/` — architecture notes, backlog, stories.
+- `main.py` - composition root and lifecycle wiring.
+- `config/` - runtime config loading, validation, and runtime patch helpers.
+- `analyzer/` - capture abstraction, per-frame metrics, state resolution, recording.
+- `server/` - FastAPI app, routes, static UI, state machine, shared `StatusStore`.
+- `ui/` - selector overlay and synchronization utilities.
+- `testdata/` - synthetic scenario engine, profiling settings, logging/summary helpers.
+- `docs/` - architecture, guide, stories, backlog.
 
-## Runtime flow (happy path)
+## Local setup
 
-1. Start app (`python main.py`).
-2. Load and validate config.
-3. Start API server thread.
+1. Create venv.
+2. `pip install -r requirements.lock.txt`
+3. Run smoke command:
+   - `python main.py --help`
+
+## Runtime flow
+
+1. Parse CLI and load config.
+2. Enable DPI awareness (Windows).
+3. Start server thread.
 4. Start monitor loop thread.
-5. Run Qt selector in main thread.
-6. Monitor publishes payloads to `StatusStore`.
-7. API and UI consumers read normalized payloads from store.
+5. Start Qt selector UI in main thread.
+6. Publish normalized payloads into `StatusStore`.
+7. Shutdown on UI close or `/quit` request.
 
-## Key invariants
+## Extension guidelines
 
-- Grid dimensions (`grid_rows * grid_cols`) define tile vector length.
-- Disabled tiles are represented as index list + `None` in tile values.
-- `StatusStore` is the only mutable shared-state boundary between threads.
-- Region coordinates are treated in capture backend coordinate space.
+### Analyzer changes
+- Preserve `Region` semantics and tile order contract (row-major).
+- Keep payload fields additive where possible.
+- Avoid breaking endpoint consumers that expect disabled tiles as `null`.
 
-## Extending capture backends
+### API changes
+- Keep routes thin and push state logic into `StatusStore`.
+- Treat `/ui/settings` compatibility alias as public behavior.
+- Prefer additive payload changes over renames/removals.
 
-If you add a backend beyond `MSS`:
-- keep `Region` semantics unchanged,
-- preserve BGRA output contract from `grab`,
-- validate backend string in `ScreenCapturer.__init__`,
-- document backend-specific DPI/monitor behavior.
+### UI changes
+- Keep overlay geometry and emitted region consistent.
+- Be careful with DPI and monitor coordinate conversions on Windows.
 
-## Extending API endpoints
+## Troubleshooting checklist
 
-- Keep endpoints thin; move logic to `StatusStore` or dedicated service modules.
-- Preserve compatibility paths unless intentionally versioning API.
-- Prefer additive JSON changes.
+- Misaligned capture region: verify DPI awareness and monitor scaling.
+- Missing tile interaction: inspect `/tiles` and selector poll/sync logs.
+- Flat or stale metrics: check capture backend health and `/status` error field.
+- Recorder not producing clips: verify trigger state, cooldown, and output path.
 
-## Debugging checklist
-
-- Region mismatch: verify DPI awareness and monitor scaling.
-- No tile updates: check `/tiles` endpoint and UI poller URL.
-- Flatlined status: inspect capture errors in `/status` and monitor logs.
-- Missing clips: verify recording trigger state, cooldown, and output path.
-
-## Suggested quality gates before release
+## Recommended validation before commit
 
 - `python -m compileall .`
-- smoke run of `python main.py --help`
-- manual check of `/status`, `/history`, `/tiles`, `/ui`
-- docs consistency update (`readme.md`, `docs/architecture.md`)
+- `python main.py --help`
+- Manual endpoint check for `/status`, `/history`, `/tiles`, `/ui`
+- Refresh docs when behavior or payload contracts change

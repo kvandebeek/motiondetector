@@ -1,5 +1,5 @@
-# File commentary: testdata/summary.py - This file holds logic used by the motion detector project.
-# testdata/summary.py
+"""testdata/summary.py module."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -58,7 +58,7 @@ class TestDataSummaryWriter:
 
     @property
     def path_str(self) -> str:
-        """Handle path str for this module."""
+        """Path str."""
         return str(self._path)
 
     def write(self, s: SceneStats) -> None:

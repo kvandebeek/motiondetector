@@ -1,4 +1,3 @@
-# File commentary: analyzer/audio_meter.py - This file holds logic used by the motion detector project.
 """Best-effort audio level meter using Windows loopback (PyAudioWPatch) or WASAPI sessions (pycaw)."""
 from __future__ import annotations
 
@@ -104,12 +103,12 @@ class AudioMeter:
 
     @staticmethod
     def _rms_value(x: np.ndarray) -> float:
-        """Handle rms value for this module."""
+        """Rms value."""
         y = x.astype(np.float32)
         return float(np.sqrt(np.mean(y * y))) if y.size else 0.0
 
     def _pick_loopback_device(self, pa: "pyaudio.PyAudio") -> int:
-        """Handle pick loopback device for this module."""
+        """Pick loopback device."""
         if self._device_id:
             try:
                 resolved = resolve_device_index(self._device_id)
@@ -157,7 +156,7 @@ class AudioMeter:
         raise RuntimeError("no_loopback_input_device")
 
     def _iter_session_peaks(self) -> Iterable[float]:
-        """Handle iter session peaks for this module."""
+        """Iter session peaks."""
         if AudioUtilities is None or IAudioMeterInformation is None:
             return
 

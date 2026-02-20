@@ -1,5 +1,5 @@
-# File commentary: ui/selector/interaction.py - This file holds logic used by the motion detector project.
-# ui/selector_interaction.py
+"""ui/selector/interaction.py helpers."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

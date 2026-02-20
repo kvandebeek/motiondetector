@@ -1,5 +1,3 @@
-# File commentary: analyzer/monitor_loop.py - This file holds logic used by the motion detector project.
-# analyzer/monitor_loop.py
 """
 Monitor loop: capture a screen region at a fixed FPS, compute motion metrics, publish status JSON,
 and optionally record clips when motion state meets configured conditions.
@@ -193,7 +191,7 @@ def _detect_dead_top_rows(diff_u8: np.ndarray, *, rows: int, max_rows: int = 5) 
     tile_h = max(1, h // max(rows, 1))
 
     def band_mean(i: int) -> float:
-        """Handle band mean for this module."""
+        """Band mean."""
         y0 = i * tile_h
         y1 = min(h, (i + 1) * tile_h)
         if y0 >= h or y1 <= y0:
@@ -407,7 +405,7 @@ class MonitorLoop:
         return sorted(set(out))
 
     def _resolve_video_state_with_grace(self, *, ts: float, no_motion_candidate: bool) -> str:
-        """Resolve video state with grace for this module's workflow."""
+        """Video state with grace."""
         grace_period = max(0.0, float(getattr(self._params, "no_motion_grace_period_seconds", 0.0)))
         required_ratio = float(getattr(self._params, "no_motion_grace_required_ratio", 1.0))
         required_ratio = _clamp01(required_ratio)
@@ -430,7 +428,7 @@ class MonitorLoop:
         return "MOTION_OR_LOW"
 
     def _process_frame(self, *, frame: np.ndarray, ts: float, region: Region) -> Dict:
-        """Process frame for this module's workflow."""
+        """Frame."""
         gray_full = _to_gray_u8(frame)
         audio = self._audio.get_level()
 
@@ -657,7 +655,7 @@ class MonitorLoop:
 
     @staticmethod
     def _error_payload(*, reason: str, region: Region, audio=None) -> Dict:
-        """Handle error payload for this module."""
+        """Error payload."""
         now = time.time()
         audio_available = bool(getattr(audio, "available", False))
         audio_left = float(getattr(audio, "left", 0.0))

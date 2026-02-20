@@ -1,5 +1,5 @@
-# File commentary: ui/tiles_sync.py - This file holds logic used by the motion detector project.
-# ui/tiles_sync.py
+"""ui/tiles_sync.py helpers."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

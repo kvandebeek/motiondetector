@@ -1,5 +1,5 @@
-# File commentary: server/server_html_contents.py - This file holds logic used by the motion detector project.
-# server/server_html_contents.py
+"""server/server_html_contents.py helpers."""
+
 from __future__ import annotations
 
 from pathlib import Path

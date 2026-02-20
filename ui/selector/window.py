@@ -1,4 +1,3 @@
-# File commentary: ui/selector/window.py - This file holds logic used by the motion detector project.
 """Top-level Qt overlay window for region selection and tile interaction.
 
 `SelectorWindow` composes specialized UI helpers (grid geometry, painting, interaction,
@@ -214,7 +213,7 @@ class SelectorWindow(QWidget):
 
 
     def _apply_grid_size(self, *, rows: int, cols: int) -> None:
-        """Apply grid size for this module's workflow."""
+        """Grid size."""
         rr = max(1, int(rows))
         cc = max(1, int(cols))
         try:
@@ -226,7 +225,7 @@ class SelectorWindow(QWidget):
             return
 
     def apply_ui_settings(self, snapshot: object) -> None:
-        """Apply ui settings for this module's workflow."""
+        """Ui settings."""
         if not isinstance(snapshot, UiSettingsSnapshot):
             return
         self.set_show_tile_numbers(bool(snapshot.show_tile_numbers))
@@ -264,7 +263,7 @@ class SelectorWindow(QWidget):
         self.update()
 
     def _notify_geometry_changed(self) -> None:
-        """Notify geometry changed for this module's workflow."""
+        """Geometry changed."""
         cb = self._on_window_geometry_change
         if cb is None:
             return

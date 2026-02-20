@@ -1,4 +1,3 @@
-# File commentary: server/server.py - This file holds logic used by the motion detector project.
 """FastAPI application assembly and server-thread launcher.
 
 This module exposes the runtime API consumed by both the browser dashboard and the
@@ -103,7 +102,7 @@ def create_app(store: StatusStore, on_settings_changed=None) -> FastAPI:
 
     @app.post("/ui/grid")
     async def ui_grid(body: dict[str, Any] = Body(default={})) -> JSONResponse:
-        """Handle ui grid for this module."""
+        """Ui grid."""
         rows = body.get("rows")
         cols = body.get("cols")
         if not isinstance(rows, int) or not isinstance(cols, int) or rows <= 0 or cols <= 0:
@@ -115,7 +114,7 @@ def create_app(store: StatusStore, on_settings_changed=None) -> FastAPI:
 
     @app.post("/ui/state-overlay")
     async def ui_state_overlay(body: dict[str, Any] = Body(default={})) -> JSONResponse:
-        """Handle ui state overlay for this module."""
+        """Ui state overlay."""
         enabled = _parse_bool(body.get("enabled"))
         if enabled is None:
             return JSONResponse({"error": "enabled must be boolean"}, status_code=400)
@@ -126,7 +125,7 @@ def create_app(store: StatusStore, on_settings_changed=None) -> FastAPI:
 
     @app.post("/ui/region")
     async def ui_region(body: dict[str, Any] = Body(default={})) -> JSONResponse:
-        """Handle ui region for this module."""
+        """Ui region."""
         x = body.get("x")
         y = body.get("y")
         width = body.get("width")

@@ -1,5 +1,5 @@
-# File commentary: testdata/engine.py - This file holds logic used by the motion detector project.
-# testdata/engine.py
+"""testdata/engine.py helpers."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -14,12 +14,12 @@ from testdata.settings import TestDataSettings
 
 
 def _clamp01(x: float) -> float:
-    """Handle clamp01 for this module."""
+    """Clamp01."""
     return 0.0 if x < 0.0 else 1.0 if x > 1.0 else x
 
 
 def _lerp(a: float, b: float, t: float) -> float:
-    """Handle lerp for this module."""
+    """Lerp."""
     return a + (b - a) * t
 
 
@@ -216,7 +216,7 @@ class TestDataEngine:
         self._no_motion_frame_i = 0
 
     def next_frame(self) -> FrameOut:
-        """Handle next frame for this module."""
+        """Next frame."""
         dt = 1.0 / max(1.0, float(self._s.fps))
         self._t += dt
         self._scene_t += dt
@@ -283,18 +283,18 @@ class TestDataEngine:
         return d
 
     def _variant_tag(self, idx1: int) -> str:
-        """Handle variant tag for this module."""
+        """Variant tag."""
         v = (int(idx1) + int(self._static_texture_seed)) % 3
         return "v1" if v == 0 else "v2" if v == 1 else "v3"
 
     def _scene_name(self, idx1: int) -> str:
-        """Handle scene name for this module."""
+        """Scene name."""
         if idx1 >= 19:
             return f"{self._scene_name_base(idx1)} ({self._variant_tag(idx1)})"
         return self._scene_name_base(idx1)
 
     def _scene_name_base(self, idx1: int) -> str:
-        """Handle scene name base for this module."""
+        """Scene name base."""
         return {
             1: "Random pixels below NO_MOTION threshold",
             2: "Random pixels below LOW_ACTIVITY threshold",
@@ -329,7 +329,7 @@ class TestDataEngine:
         }.get(idx1, f"Scene {idx1}")
 
     def _phase_name(self, idx1: int) -> str:
-        """Handle phase name for this module."""
+        """Phase name."""
         if idx1 == 4:
             p = int(self._scene_t // (self._durations[self._scene0] / 3.0)) % 3
             return "phase=1" if p == 0 else "phase=2" if p == 1 else "phase=3"
@@ -366,7 +366,7 @@ class TestDataEngine:
         return patterns[(idx1 - 1) % len(patterns)]
 
     def _expected_state(self, idx1: int) -> str:
-        """Handle expected state for this module."""
+        """Expected state."""
         if idx1 == 1:
             return "NO_MOTION_NOSOUNDHARDWARE"
         if idx1 == 2:
@@ -398,7 +398,7 @@ class TestDataEngine:
     # ---------------- scene init ----------------
 
     def _init_scene(self, idx0: int) -> None:
-        """Handle init scene for this module."""
+        """Init scene."""
         self._scene_t = 0.0
         self._prev_gray = None
         self._ema = 0.0  # scene-local calibration
@@ -481,7 +481,7 @@ class TestDataEngine:
     # ---------------- render dispatch ----------------
 
     def _render_scene(self, *, scene0: int, dt: float) -> tuple[np.ndarray, Optional[SubtitleOverlay]]:
-        """Render scene for this module's workflow."""
+        """Scene."""
         idx1 = scene0 + 1
 
         if idx1 == 1:
@@ -662,7 +662,7 @@ class TestDataEngine:
     # ---------------- scenes 1–18 (kept, scene 1 improved) ----------------
 
     def _scene_pixels(self, *, target: str) -> np.ndarray:
-        """Handle scene pixels for this module."""
+        """Scene pixels."""
         if target == "below_no_motion":
             # (keep your existing below_no_motion implementation unchanged)
             self._no_motion_frame_i += 1
@@ -751,14 +751,14 @@ class TestDataEngine:
 
 
     def _scene_fade(self) -> np.ndarray:
-        """Handle scene fade for this module."""
+        """Scene fade."""
         cycle = 20.0
         t = self._scene_t % cycle
         v = int(round(128.0 * (t / 10.0))) if t <= 10.0 else int(round(128.0 * (1.0 - ((t - 10.0) / 10.0))))
         return np.full((self._h, self._w, 3), v, dtype=np.uint8)
 
     def _scene_subtitles_blocky(self, *, fg: str, bg: str, dt: float) -> np.ndarray:
-        """Handle scene subtitles blocky for this module."""
+        """Scene subtitles blocky."""
         bg_v = 0 if bg == "black" else 255
         fg_v = 255 if fg == "white" else 0
         frame = np.full((self._h, self._w, 3), bg_v, dtype=np.uint8)
@@ -778,7 +778,7 @@ class TestDataEngine:
         return frame
 
     def _scene_static_regions(self) -> np.ndarray:
-        """Handle scene static regions for this module."""
+        """Scene static regions."""
         frame = np.zeros((self._h, self._w, 3), dtype=np.uint8)
         third = max(1, self._w // 3)
         p = int(self._scene_t // 6.0) % 3
@@ -791,7 +791,7 @@ class TestDataEngine:
         return frame
 
     def _scene_spinner(self) -> np.ndarray:
-        """Handle scene spinner for this module."""
+        """Scene spinner."""
         frame = np.zeros((self._h, self._w, 3), dtype=np.uint8)
         cx, cy = int(self._w * 0.60), int(self._h * 0.50)
         r = int(min(self._w, self._h) * 0.10)
@@ -802,12 +802,12 @@ class TestDataEngine:
         return frame
 
     def _scene_real_subtitles_fade(self, *, fg: str, bg: str) -> np.ndarray:
-        """Handle scene real subtitles fade for this module."""
+        """Scene real subtitles fade."""
         bg_v = 0 if bg == "black" else 255
         return np.full((self._h, self._w, 3), bg_v, dtype=np.uint8)
 
     def _scene_pixel_size_calibration(self) -> np.ndarray:
-        """Handle scene pixel size calibration for this module."""
+        """Scene pixel size calibration."""
         frame = np.zeros((self._h, self._w, 3), dtype=np.uint8)
         per = self._durations[self._scene0] / 3.0
         p = int(self._scene_t // per) % 3
@@ -817,7 +817,7 @@ class TestDataEngine:
         return frame
 
     def _scene_one_tile_sweep(self) -> np.ndarray:
-        """Handle scene one tile sweep for this module."""
+        """Scene one tile sweep."""
         frame = np.zeros((self._h, self._w, 3), dtype=np.uint8)
         rows = max(1, int(self._s.grid_rows))
         cols = max(1, int(self._s.grid_cols))
@@ -838,7 +838,7 @@ class TestDataEngine:
         return frame
 
     def _scene_slow_pan(self) -> np.ndarray:
-        """Handle scene slow pan for this module."""
+        """Scene slow pan."""
         if self._pan_base is None:
             self._pan_base = self._make_static_texture(seed=12_345, contrast=90)
 
@@ -852,7 +852,7 @@ class TestDataEngine:
         return out
 
     def _scene_compression_noise(self, *, mode: str) -> np.ndarray:
-        """Handle scene compression noise for this module."""
+        """Scene compression noise."""
         frame = np.zeros((self._h, self._w, 3), dtype=np.uint8)
         mb = 16
         rng = random.Random(self._noise_phase_seed + int(self._scene_t * 3.0) + (15_000 if mode == "between" else 10_000))
@@ -867,7 +867,7 @@ class TestDataEngine:
         return frame
 
     def _scene_black_with_blink(self, *, dt: float) -> np.ndarray:
-        """Handle scene black with blink for this module."""
+        """Scene black with blink."""
         frame = np.zeros((self._h, self._w, 3), dtype=np.uint8)
         if self._scene_t >= self._next_blink_s:
             self._blink_on = True
@@ -882,7 +882,7 @@ class TestDataEngine:
         return frame
 
     def _scene_subtitle_crawl(self, *, dt: float) -> np.ndarray:
-        """Handle scene subtitle crawl for this module."""
+        """Scene subtitle crawl."""
         frame = np.zeros((self._h, self._w, 3), dtype=np.uint8)
         self._crawl_x -= 22.0 * dt
         if self._crawl_x < -float(self._w) * 0.80:
@@ -890,7 +890,7 @@ class TestDataEngine:
         return frame
 
     def _subtitle_crawl_overlay(self) -> SubtitleOverlay:
-        """Handle subtitle crawl overlay for this module."""
+        """Subtitle crawl overlay."""
         return SubtitleOverlay(
             text=self._crawl_text,
             fg_rgb=(255, 255, 255),
@@ -900,7 +900,7 @@ class TestDataEngine:
         )
 
     def _subtitle_overlay(self, *, fg: str, bg: str, fade: bool) -> SubtitleOverlay:
-        """Handle subtitle overlay for this module."""
+        """Subtitle overlay."""
         fg_rgb = (255, 255, 255) if fg == "white" else (0, 0, 0)
         if not fade:
             a = 1.0
@@ -943,27 +943,27 @@ class TestDataEngine:
         return base
 
     def _grain_amp(self) -> int:
-        """Handle grain amp for this module."""
+        """Grain amp."""
         vtag = self._variant_tag(23)
         return 2 if vtag == "v1" else 4 if vtag == "v2" else 7
 
     def _grain_period_s(self) -> float:
-        """Handle grain period s for this module."""
+        """Grain period s."""
         vtag = self._variant_tag(23)
         return 0.25 if vtag == "v1" else 0.16 if vtag == "v2" else 0.10
 
     def _mb_amp(self) -> int:
-        """Handle mb amp for this module."""
+        """Mb amp."""
         vtag = self._variant_tag(29)
         return 1 if vtag == "v1" else 2 if vtag == "v2" else 3
 
     def _mb_period_s(self) -> float:
-        """Handle mb period s for this module."""
+        """Mb period s."""
         vtag = self._variant_tag(29)
         return 0.50 if vtag == "v1" else 0.33 if vtag == "v2" else 0.22
 
     def _scene_long_black_with_noise(self, *, dt: float) -> np.ndarray:
-        """Handle scene long black with noise for this module."""
+        """Scene long black with noise."""
         vtag = self._variant_tag(19)
         base = 0 if vtag != "v3" else 2
         frame = np.full((self._h, self._w, 3), base, dtype=np.uint8)
@@ -983,7 +983,7 @@ class TestDataEngine:
         return frame
 
     def _scene_logo_bug(self, *, dt: float) -> np.ndarray:
-        """Handle scene logo bug for this module."""
+        """Scene logo bug."""
         frame = self._get_static_texture().copy()
 
         if self._scene_t >= self._logo_next_toggle_s:
@@ -1002,7 +1002,7 @@ class TestDataEngine:
         return frame
 
     def _scene_captions_fade(self, *, dt: float) -> np.ndarray:
-        """Handle scene captions fade for this module."""
+        """Scene captions fade."""
         frame = self._get_static_texture().copy()
 
         vtag = self._variant_tag(21)
@@ -1018,7 +1018,7 @@ class TestDataEngine:
         return frame
 
     def _captions_overlay(self) -> SubtitleOverlay:
-        """Handle captions overlay for this module."""
+        """Captions overlay."""
         a = float(_clamp01(self._cap_alpha))
         return SubtitleOverlay(
             text=self._cap_text,
@@ -1029,7 +1029,7 @@ class TestDataEngine:
         )
 
     def _scene_ticker_crawl(self, *, dt: float) -> np.ndarray:
-        """Handle scene ticker crawl for this module."""
+        """Scene ticker crawl."""
         frame = self._get_static_texture().copy()
 
         vtag = self._variant_tag(22)
@@ -1040,7 +1040,7 @@ class TestDataEngine:
         return frame
 
     def _ticker_overlay(self) -> SubtitleOverlay:
-        """Handle ticker overlay for this module."""
+        """Ticker overlay."""
         return SubtitleOverlay(
             text=self._ticker_text,
             fg_rgb=(255, 255, 0),
@@ -1050,7 +1050,7 @@ class TestDataEngine:
         )
 
     def _scene_film_grain(self, *, dt: float) -> np.ndarray:
-        """Handle scene film grain for this module."""
+        """Scene film grain."""
         frame = np.full((self._h, self._w, 3), 10, dtype=np.uint8)
 
         if self._scene_t >= self._grain_next_update_s:
@@ -1066,7 +1066,7 @@ class TestDataEngine:
         return out
 
     def _scene_brightness_pump(self, *, dt: float) -> np.ndarray:
-        """Handle scene brightness pump for this module."""
+        """Scene brightness pump."""
         base = self._get_static_texture().copy()
         vtag = self._variant_tag(24)
 
@@ -1078,7 +1078,7 @@ class TestDataEngine:
         return out
 
     def _scene_loading_spinner(self, *, dt: float) -> np.ndarray:
-        """Handle scene loading spinner for this module."""
+        """Scene loading spinner."""
         vtag = self._variant_tag(25)
         frame = self._get_static_texture().copy()
 
@@ -1098,17 +1098,17 @@ class TestDataEngine:
         return frame
 
     def _cut_period_s(self) -> float:
-        """Handle cut period s for this module."""
+        """Cut period s."""
         vtag = self._variant_tag(26)
         return 6.0 if vtag == "v1" else 4.0 if vtag == "v2" else 2.5
 
     def _cut_spike_s(self) -> float:
-        """Handle cut spike s for this module."""
+        """Cut spike s."""
         vtag = self._variant_tag(26)
         return 0.35 if vtag == "v1" else 0.45 if vtag == "v2" else 0.55
 
     def _scene_hard_cuts(self, *, dt: float) -> np.ndarray:
-        """Handle scene hard cuts for this module."""
+        """Scene hard cuts."""
         if self._cut_a is None or self._cut_b is None:
             self._cut_a = self._make_static_texture(seed=self._cut_a_seed, contrast=90).copy()
             self._cut_b = self._make_static_texture(seed=self._cut_b_seed, contrast=120).copy()
@@ -1127,7 +1127,7 @@ class TestDataEngine:
         return out
 
     def _scene_freeze_with_refresh(self, *, dt: float) -> np.ndarray:
-        """Handle scene freeze with refresh for this module."""
+        """Scene freeze with refresh."""
         vtag = self._variant_tag(27)
         refresh_period = 6.0 if vtag == "v1" else 3.0 if vtag == "v2" else 1.5
         blocks = 6 if vtag == "v1" else 14 if vtag == "v2" else 28
@@ -1152,7 +1152,7 @@ class TestDataEngine:
         return out
 
     def _scene_detailed_pan(self, *, dt: float) -> np.ndarray:
-        """Handle scene detailed pan for this module."""
+        """Scene detailed pan."""
         vtag = self._variant_tag(28)
         if self._dpan_base is None:
             self._dpan_base = self._make_static_texture(seed=44_444, contrast=160).copy()
@@ -1178,7 +1178,7 @@ class TestDataEngine:
         return out
 
     def _scene_gradient_shimmer(self, *, dt: float) -> np.ndarray:
-        """Handle scene gradient shimmer for this module."""
+        """Scene gradient shimmer."""
         frame = np.zeros((self._h, self._w, 3), dtype=np.uint8)
 
         for x in range(self._w):
@@ -1205,7 +1205,7 @@ class TestDataEngine:
         return np.clip(frame.astype(np.int16) + self._mb_cache, 0, 255).astype(np.uint8)
 
     def _scene_scrolling_credits(self, *, dt: float) -> np.ndarray:
-        """Handle scene scrolling credits for this module."""
+        """Scene scrolling credits."""
         vtag = self._variant_tag(30)
         frame = np.full((self._h, self._w, 3), 0, dtype=np.uint8)
 
@@ -1227,7 +1227,7 @@ class TestDataEngine:
 
     @staticmethod
     def _rect(img: np.ndarray, x0: int, y0: int, x1: int, y1: int, v: int) -> None:
-        """Handle rect for this module."""
+        """Rect."""
         x0i = max(0, min(int(x0), int(img.shape[1] - 1)))
         x1i = max(0, min(int(x1), int(img.shape[1])))
         y0i = max(0, min(int(y0), int(img.shape[0] - 1)))
@@ -1238,7 +1238,7 @@ class TestDataEngine:
 
     @staticmethod
     def _dot(img: np.ndarray, x: int, y: int, r: int, v: int) -> None:
-        """Handle dot for this module."""
+        """Dot."""
         rr = max(1, int(r))
         xi = int(x)
         yi = int(y)

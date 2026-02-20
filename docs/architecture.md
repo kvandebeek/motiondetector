@@ -1,159 +1,59 @@
-# Architecture Review (Current)
+# Architecture
 
-This document summarizes the current repository architecture after the latest tag and describes strengths, risks, and practical next steps.
+## System overview
 
-## 1) System overview
+`motiondetector` is a local desktop service with three concurrent runtime loops and one shared state boundary.
 
-`motiondetector` is a Windows-focused desktop service composed of five runtime layers:
+### Runtime components
 
-1. **UI layer (Qt / PySide6)**
-   - Transparent always-on-top selector overlay.
-   - Region movement/resize and tile toggling.
-   - Server-synchronized UI settings (tile number visibility).
+1. **Selector UI (Qt / PySide6)**
+   - Transparent always-on-top region selection overlay.
+   - Grid visualization and tile toggle interaction.
+   - Runtime UI setting synchronization against server APIs.
 
-2. **Capture + analysis layer**
-   - Region frame capture (`MSS`).
-   - Frame differencing + tile metrics + smoothing.
-   - Motion state assignment and confidence scoring.
-   - Optional clip recorder state machine.
+2. **Analyzer loop**
+   - Capture selected region frames via `MSS`.
+   - Compute diff-based instant + smoothed metrics.
+   - Resolve detector state (motion + optional audio context).
+   - Publish normalized payloads and optional recordings.
 
-3. **State layer**
-   - Thread-safe `StatusStore` as cross-thread source of truth:
-     latest payload, history, disabled tiles, UI settings, quit flag.
+3. **HTTP server (FastAPI/Uvicorn)**
+   - Exposes status, history, tile mask, UI settings, and quit endpoint.
+   - Serves static dashboard assets.
 
-4. **HTTP/API layer (FastAPI + Uvicorn)**
-   - JSON endpoints for status/history/ui/tile control.
-   - Static dashboard assets and lightweight browser UI.
+4. **Shared state (`StatusStore`)**
+   - Thread-safe latest payload and rolling history.
+   - Tile disable mask and runtime UI settings.
+   - Quit coordination flag.
 
-5. **Composition/runtime orchestration (`main.py`)**
-   - Wires all subsystems.
-   - Handles startup order and cooperative shutdown.
+## Threading model
 
----
+- Main thread: Qt event loop + overlay interaction.
+- Monitor thread: capture + analysis loop.
+- Server thread: API serving loop.
 
-## 2) Threading and lifecycle model
+Synchronization primitives:
+- store-internal lock for mutable shared state.
+- event/flag-based shutdown coordination.
 
-### Thread roles
-- **Main thread**: Qt event loop and selector window.
-- **Monitor thread**: capture/analysis loop.
-- **Server thread**: Uvicorn/FastAPI event loop.
+## Data contracts
 
-### Coordination primitives
-- `threading.Event` quit flag for process-level shutdown intent.
-- SIGINT (`Ctrl+C`) is bridged into the same quit flag so terminal shutdown and UI-close follow one path.
-- `StatusStore` lock protects shared mutable state.
-- callback-based region access (`get_region`) decouples monitor from UI objects.
+### Payload principles
+- Published values are normalized for stable client consumption.
+- Tile values are row-major and consistent with configured grid shape.
+- Disabled tiles are represented both as indices and masked `null` values.
+- Error states are surfaced in payloads rather than silently suppressing failures.
 
-### Assessment
-- ✅ Good separation of concerns between UI, analysis, and transport.
-- ✅ `StatusStore` centralization simplifies consistency across consumers.
-- ⚠️ Single-lock store can become contention point if history size or route polling grows significantly.
+## Key design choices
 
----
+- Thin API routes; business state handled in shared store/services.
+- Overlay geometry conversion is explicit to avoid DPI mismatch.
+- Analyzer emits continuous payloads to support polling clients and dashboards.
+- Optional synthetic test-data mode supports repeatable tuning and regression checks.
 
-## 3) Data model and contracts
+## Risks and future improvements
 
-### Runtime payload contract
-- Analyzer emits normalized payloads with:
-  - capture status
-  - video metrics/state
-  - grid/tile values
-  - region metadata
-  - errors
-- Store injects disabled-tile mask and UI settings for consistent client reads.
-
-### Assessment
-- ✅ JSON shape is stable and pragmatic for UI + API consumers.
-- ✅ Masking disabled tiles to `None` is explicit and safe.
-- ⚠️ Contract is implicitly enforced by code/docstrings; no dedicated schema tests yet.
-
----
-
-## 4) UI architecture
-
-UI code is cleanly split under `ui/selector/`:
-- geometry, paint, interaction, region emit, state/settings models.
-- `SelectorWindow` acts as composition shell.
-
-### Assessment
-- ✅ Good modularization and readability.
-- ✅ Poller-based synchronization keeps coupling low.
-- ⚠️ Polling intervals are static; adaptive backoff could lower idle CPU/network chatter.
-
----
-
-## 5) Capture and analysis architecture
-
-- Capture abstraction exists but currently single backend (`MSS`).
-- Analysis pipeline includes:
-  - grayscale conversion
-  - differencing
-  - tile means/top-k activity
-  - state classification and confidence
-  - optional inset-based ROI crop
-
-### Assessment
-- ✅ Robust operational behavior (errors published instead of thread crash).
-- ✅ Practical normalization and state logic suitable for automation.
-- ⚠️ No explicit benchmark/telemetry hooks for tuning across machines.
-
----
-
-## 6) API/server architecture
-
-- Thin routes delegate to store.
-- Backward-compatible aliases exist (`/ui/settings`, `/server/assets`).
-- Graceful shutdown is signaled through store instead of abrupt server stop.
-
-### Assessment
-- ✅ Appropriate for local single-user service.
-- ⚠️ No auth by design; should remain loopback-bound for safety.
-
----
-
-## 7) Audio loopback architecture
-
-- Audio meter supports `pycaw` WASAPI session metering (preferred for audio-present checks) and `pyaudiowpatch` loopback capture fallback.
-- WASAPI mode can filter sessions by `audio.process_names` and applies threshold + hysteresis (`on/off/hold/smooth`) to compute `audio.detected`.
-- Loopback mode still supports explicit `audio.device_index` and fallback auto-select (`audio.device_substr`, then first loopback input).
-- Failures are surfaced in payload (`audio.available=false`, `audio.reason=capture_failed:*`) without crashing the monitor loop.
-
-### Assessment
-- ✅ WASAPI session metering is independent of endpoint master volume and better matches binary "audio present" requirements.
-- ⚠️ Process/session identity is application-dependent; configs should pin `audio.process_names` for deterministic behavior when needed.
-
----
-
-## 8) Configuration architecture
-
-- `config/config.py` validates and normalizes JSON into immutable `AppConfig`.
-- Required and optional sections are clearly separated.
-
-### Assessment
-- ✅ Startup-time failure model is clear and deterministic.
-- ⚠️ Validation is procedural; a future schema test suite would improve regression safety.
-
----
-
-## 9) Priority recommendations
-
-1. Add focused unit tests for:
-   - `server/state_machine.py`
-   - payload normalization behavior
-   - disabled tile masking and history trimming in `StatusStore`
-2. Add API contract tests for `/status`, `/history`, `/tiles`, `/ui`.
-3. Add lightweight performance diagnostics (capture time, analysis time, loop jitter).
-4. Persist selected server/UI state (optional) for smoother restarts.
-5. Keep localhost defaults in examples and docs for secure local operation.
-
----
-
-## 10) Bottom line
-
-The repository has a **solid, maintainable architecture** for a local desktop motion detector:
-- clear boundaries,
-- practical thread model,
-- coherent status contract,
-- and readable modular UI code.
-
-Main improvements now are around **test coverage and observability**, not major redesign.
+- Add schema-level payload tests to lock API contracts.
+- Add explicit analyzer timing telemetry for capture/processing performance.
+- Consider adaptive poll intervals for lower idle overhead.
+- Continue keeping local-loopback defaults for safer deployments.

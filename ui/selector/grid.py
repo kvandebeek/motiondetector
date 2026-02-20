@@ -1,5 +1,5 @@
-# File commentary: ui/selector/grid.py - This file holds logic used by the motion detector project.
-# ui/selector_grid.py
+"""ui/selector/grid.py helpers."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

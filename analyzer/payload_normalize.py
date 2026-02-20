@@ -12,6 +12,7 @@ can rely on a stable schema.
 Schema goals:
 - No duplicated representations of the same data (no tile1..tileN + tiles + tiles_named).
 - Tiles are a single ordered list; disabled tiles are represented as None + an index list.
+- `tiles_indexed` provides explicit tile numbers plus value for each tile.
 - Keep "debug" out of the default payload (gate it elsewhere if needed).
 - Keep timestamp sources consistent.
 """
@@ -91,6 +92,7 @@ def build_payload(
     - Stable schema (keys and nesting remain consistent across the app).
     - `tiles` is always a list of length rows*cols, row-major.
     - `disabled_tiles` is derived from tiles where value is None.
+    - `tiles_indexed` mirrors `tiles` with explicit tile indices and disabled markers.
     - Timestamp is always epoch seconds as float.
 
     Args:
@@ -138,6 +140,10 @@ def build_payload(
     # Keeping both representations is useful: tiles carries nulls; disabled_tiles makes it easy
     # for clients to style/skip tiles without scanning the entire list.
     disabled_tiles = [i for i, v in enumerate(tiles_list) if v is None]
+    tiles_indexed = [
+        {"tile": i, "value": "disabled" if v is None else float(v)}
+        for i, v in enumerate(tiles_list)
+    ]
 
     return {
         "timestamp": now_ts,
@@ -152,6 +158,7 @@ def build_payload(
             "motion_mean": float(motion_mean),
             "grid": {"rows": rows, "cols": cols},
             "tiles": tiles_list,
+            "tiles_indexed": tiles_indexed,
             "disabled_tiles": disabled_tiles,
             "stale": bool(stale),
             "stale_age_sec": float(stale_age_sec),

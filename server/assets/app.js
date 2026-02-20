@@ -100,6 +100,17 @@ function setOverlayToggleCheckedFromServer(value) {
 
 // statusForDisplay keeps this part of the interface easy to understand and use.
 function statusForDisplay(payload) {
+  const tilesIndexed = payload?.video?.tiles_indexed;
+  if (Array.isArray(tilesIndexed)) {
+    return {
+      ...payload,
+      video: {
+        ...payload.video,
+        tiles: tilesIndexed,
+      },
+    };
+  }
+
   const tiles = payload?.video?.tiles;
   if (!Array.isArray(tiles)) return payload;
   return {

@@ -617,6 +617,11 @@ class MonitorLoop:
         audio,
     ) -> Dict:
         tiles_list: List[Optional[float]] = [float(x) if x is not None else None for x in tiles]
+        tiles_indexed = [
+            {"tile": i, "value": "disabled" if v is None else float(v)}
+            for i, v in enumerate(tiles_list)
+        ]
+        disabled_tiles_list: List[int] = [i for i, v in enumerate(tiles_list) if v is None]
 
         return {
             "timestamp": float(ts),
@@ -630,7 +635,8 @@ class MonitorLoop:
                 "motion_instant_activity": float(motion_instant_activity),
                 "grid": {"rows": int(rows), "cols": int(cols)},
                 "tiles": tiles_list,
-                "disabled_tiles": [int(i) for i in disabled_tiles],
+                "tiles_indexed": tiles_indexed,
+                "disabled_tiles": disabled_tiles_list,
                 "stale": bool(stale),
                 "stale_age_sec": float(stale_age_sec),
             },
@@ -667,6 +673,7 @@ class MonitorLoop:
                 "motion_instant_activity": 0.0,
                 "grid": {"rows": 0, "cols": 0},
                 "tiles": [],
+                "tiles_indexed": [],
                 "disabled_tiles": [],
                 "stale": True,
                 "stale_age_sec": 0.0,

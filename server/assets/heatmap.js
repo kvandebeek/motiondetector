@@ -120,7 +120,7 @@ export function isTileDisabled(raw, idx, disabledTilesSet) {
  * Extract { tiles, rows, cols } from a payload, with fallbacks and inference.
  *
  * Supports multiple payload shapes:
- * - Preferred: payload.video.tiles + payload.video.grid
+ * - Preferred: payload.video.tiles_indexed + payload.video.grid
  * - Fallback:  payload.tiles + payload.grid (useful for older payloads or tests)
  *
  * If grid is missing or inconsistent with tile count, attempts to infer a square-ish grid
@@ -128,7 +128,18 @@ export function isTileDisabled(raw, idx, disabledTilesSet) {
  */
 // getGridAndTiles keeps this part of the interface easy to understand and use.
 export function getGridAndTiles(payload) {
-  const tiles = payload?.video?.tiles ?? payload?.tiles ?? [];
+  const tilesIndexed = payload?.video?.tiles_indexed;
+  const tilesFromIndexed = Array.isArray(tilesIndexed)
+    ? tilesIndexed.map((entry, idx) => {
+        const tile = Number(entry?.tile);
+        if (!Number.isInteger(tile) || tile !== idx) return undefined;
+        const value = entry?.value;
+        return value === 'disabled' ? null : value;
+      })
+    : null;
+  const indexedValid = Array.isArray(tilesFromIndexed) && tilesFromIndexed.every((v) => v !== undefined);
+
+  const tiles = indexedValid ? tilesFromIndexed : payload?.video?.tiles ?? payload?.tiles ?? [];
   const grid = payload?.video?.grid ?? payload?.grid ?? { rows: 0, cols: 0 };
 
   let rows = Number(grid.rows) || 0;

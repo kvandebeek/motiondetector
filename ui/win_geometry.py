@@ -1,5 +1,5 @@
-# File commentary: ui/win_geometry.py - This file holds logic used by the motion detector project.
-# ui/win_geometry.py
+"""ui/win_geometry.py helpers."""
+
 from __future__ import annotations
 
 import ctypes

@@ -1,4 +1,5 @@
-# File commentary: ui/selector/ui_logic.py - This file holds logic used by the motion detector project.
+"""ui/selector/ui_logic.py module."""
+
 # ui/selector/ui_logic.py
 from __future__ import annotations
 
@@ -90,7 +91,7 @@ def run_selector_ui(
     prev_sigint = signal.getsignal(signal.SIGINT)
 
     def _handle_sigint(_signum, _frame) -> None:
-        """Handle handle sigint for this module."""
+        """Handle sigint."""
         quit_flag.set()
 
     signal.signal(signal.SIGINT, _handle_sigint)
@@ -99,7 +100,7 @@ def run_selector_ui(
     quit_timer.setInterval(1000/25)
 
     def on_quit_tick() -> None:
-        """Handle on quit tick for this module."""
+        """On quit tick."""
         try:
             if quit_flag.is_set():
                 quit_timer.stop()

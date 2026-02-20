@@ -1,5 +1,5 @@
-# File commentary: testdata/settings.py - This file holds logic used by the motion detector project.
-# testdata/settings.py
+"""testdata/settings.py helpers."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -21,7 +21,7 @@ class TestDataSettings:
 
     @staticmethod
     def from_config(cfg: AppConfig) -> "TestDataSettings":
-        """Handle from config for this module."""
+        """From config."""
         return TestDataSettings(
             fps=float(cfg.fps),
             diff_gain=float(cfg.diff_gain),

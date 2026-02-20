@@ -1,4 +1,3 @@
-# File commentary: server/state_machine.py - This file holds logic used by the motion detector project.
 """Pure motion-state decision logic.
 
 The analyzer computes continuous metrics; this module converts them into coarse states

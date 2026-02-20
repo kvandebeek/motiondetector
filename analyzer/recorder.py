@@ -1,5 +1,5 @@
-# File commentary: analyzer/recorder.py - This file holds logic used by the motion detector project.
-# analyzer/recorder.py
+"""analyzer/recorder.py helpers."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -249,7 +249,7 @@ class ClipRecorder:
         return writer
 
     def _state_matches_trigger(self, state: str) -> bool:
-        """Handle state matches trigger for this module."""
+        """State matches trigger."""
         s = str(state)
         trig = str(self._cfg.trigger_state)
         if s == trig:

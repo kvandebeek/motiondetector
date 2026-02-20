@@ -1,4 +1,3 @@
-# File commentary: server/status_store.py - This file holds logic used by the motion detector project.
 """Thread-safe in-memory state store shared by analyzer, UI, and HTTP routes.
 
 The store is intentionally the single source of truth for runtime status payloads,
@@ -384,7 +383,7 @@ class StatusStore:
             self._current_monitor_id = int(monitor_id)
 
     def _current_state_locked(self) -> str:
-        """Handle current state locked for this module."""
+        """Current state locked."""
         payload = self._latest
         if isinstance(payload, dict):
             video = payload.get("video")

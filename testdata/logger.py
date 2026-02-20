@@ -1,5 +1,5 @@
-# File commentary: testdata/logger.py - This file holds logic used by the motion detector project.
-# testdata/logger.py
+"""testdata/logger.py module."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -73,7 +73,7 @@ class TestDataLogger:
 
     @property
     def path_str(self) -> str:
-        """Handle path str for this module."""
+        """Path str."""
         return str(self._path)
 
     def write(self, row: TestDataLogRow) -> None:

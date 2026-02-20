@@ -1,4 +1,5 @@
-# File commentary: ui/selector/ui_settings.py - This file holds logic used by the motion detector project.
+"""ui/selector/ui_settings.py module."""
+
 # ui/selector_ui_settings.py
 from __future__ import annotations
 

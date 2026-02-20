@@ -1,5 +1,5 @@
-# File commentary: ui/selector/paint.py - This file holds logic used by the motion detector project.
-# ui/selector_paint.py
+"""ui/selector/paint.py helpers."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

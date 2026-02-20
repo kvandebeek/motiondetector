@@ -148,6 +148,7 @@ class StatusStore:
         Normalization performed:
         - Ensures `video.grid` exists and is valid (fallback to store defaults).
         - Ensures `video.tiles` is a list[float|None] of length rows*cols.
+        - Adds `video.tiles_indexed` as [{tile, value}] in row-major order.
         - Applies the disabled tile mask by forcing disabled indices to None.
         - Ensures `errors` is always a list.
         - Injects `ui` settings so clients have a single polling source.
@@ -201,9 +202,15 @@ class StatusStore:
 
         # Apply disabled mask: force disabled indices to None.
         # Store ensures indices are non-negative; here we also clamp to grid bounds.
-        disabled_set = set(i for i in disabled if 0 <= int(i) < n)
-        for i in disabled_set:
+        store_disabled_set = set(i for i in disabled if 0 <= int(i) < n)
+        for i in store_disabled_set:
             tiles_out[int(i)] = None
+
+        disabled_set = {i for i, v in enumerate(tiles_out) if v is None}
+        tiles_indexed = [
+            {"tile": i, "value": "disabled" if v is None else float(v)}
+            for i, v in enumerate(tiles_out)
+        ]
 
         # Build clean video section that downstream clients can rely on.
         clean_video: Dict[str, Any] = {
@@ -212,6 +219,7 @@ class StatusStore:
             "motion_mean": float(video.get("motion_mean", 0.0)),
             "grid": {"rows": rows, "cols": cols},
             "tiles": tiles_out,
+            "tiles_indexed": tiles_indexed,
             "disabled_tiles": sorted(disabled_set),
             "stale": bool(video.get("stale", False)),
             "stale_age_sec": float(video.get("stale_age_sec", 0.0)),
@@ -490,6 +498,7 @@ class StatusStore:
                 "motion_mean": 0.0,
                 "grid": {"rows": rows, "cols": cols},
                 "tiles": [0.0] * n,
+                "tiles_indexed": [{"tile": i, "value": 0.0} for i in range(n)],
                 "disabled_tiles": [],
                 "stale": True,
                 "stale_age_sec": 0.0,

@@ -5,7 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from queue import Empty, Full, Queue
+import threading
+from typing import Deque, Optional, Tuple
+
+from collections import deque
 
 import cv2
 import numpy as np
@@ -31,10 +35,12 @@ class RecorderConfig:
     # Master switch for recording (if False, recorder is a no-op).
     enabled: bool
 
-    # The state that triggers/maintains recording (e.g. record when state == "NO_MOTION").
-    trigger_state: str  # e.g. "NO_MOTION"
+    # States that trigger/maintain recording.
+    # Supports a single value ("NO_MOTION") or a comma-separated list
+    # ("NO_MOTION,LOW_ACTIVITY").
+    trigger_state: str
 
-    # Maximum clip length in seconds (hard cap via frame budget: clip_seconds * fps).
+    # Kept for config compatibility (legacy cap is not used in incident mode).
     clip_seconds: int
 
     # Minimum time in seconds between starting two clips (prevents clip spam).
@@ -46,9 +52,11 @@ class RecorderConfig:
     # Output directory where clips will be saved.
     assets_dir: str
 
-    # When state leaves trigger_state, keep recording up to this many seconds
-    # before stopping (helps avoid rapid start/stop flapping).
+    # Post-roll after issue ends.
     stop_grace_seconds: int = 10
+
+    # Pre-roll size in seconds.
+    pre_roll_seconds: float = 2.0
 
 
 class ClipRecorder:
@@ -67,18 +75,20 @@ class ClipRecorder:
         """Initialize this object with the provided inputs and prepare its internal state."""
         self._cfg = cfg
 
-        # Active OpenCV writer when recording; None when idle.
-        self._writer: Optional[cv2.VideoWriter] = None
+        self._issue_prefixes = self._parse_trigger_prefixes(cfg.trigger_state)
+        self._pre_roll_frames = max(1, int(np.ceil(float(cfg.fps) * float(cfg.pre_roll_seconds))))
+        self._pre_roll_buffer: Deque[np.ndarray] = deque(maxlen=self._pre_roll_frames)
 
-        # Remaining frames to write before auto-stopping (clip length cap).
-        self._frames_left: int = 0
+        self._session_active = False
+        self._post_roll_deadline_ts: Optional[float] = None
+        self._was_issue_active = False
 
         # Timestamp (seconds) when the last clip started; used for cooldown.
         self._last_start_ts: float = 0.0
 
-        # When we leave trigger_state, we set a deadline (now + grace).
-        # If we re-enter trigger_state before the deadline, we clear it.
-        self._stop_deadline_ts: Optional[float] = None
+        self._queue: Queue[Tuple[str, object]] = Queue(maxsize=max(120, self._pre_roll_frames * 4))
+        self._writer_thread = threading.Thread(target=self._writer_worker, name="clip-recorder", daemon=True)
+        self._writer_thread.start()
 
         # Ensure the output directory exists early so start failures are codec-related,
         # not filesystem-related.
@@ -103,98 +113,50 @@ class ClipRecorder:
         if not self._cfg.enabled:
             return
 
-        # Start a new recording if the trigger state is active and we're idle.
-        self.maybe_start(now_ts=now_ts, state=state, frame_bgr=frame_bgr)
+        issue_active = self._state_matches_trigger(state)
 
-        # If we still don't have a writer, there is nothing to do.
-        if self._writer is None:
-            return
+        if issue_active and not self._session_active:
+            if self._cfg.cooldown_seconds <= 0 or (now_ts - self._last_start_ts) >= float(self._cfg.cooldown_seconds):
+                self._start_session(frame_bgr=frame_bgr, now_ts=now_ts)
 
-        # Recording stop logic:
-        # - While in trigger_state, keep recording and cancel any stop deadline.
-        # - When leaving trigger_state, arm a stop deadline (grace period).
-        # - If the grace period elapses, stop the recording.
-        if self._state_matches_trigger(state):
-            self._stop_deadline_ts = None
-        else:
-            if self._stop_deadline_ts is None:
-                self._stop_deadline_ts = now_ts + float(self._cfg.stop_grace_seconds)
-            if now_ts >= self._stop_deadline_ts:
-                self.stop()
-                return
+        if self._session_active:
+            if issue_active:
+                self._post_roll_deadline_ts = None
+            elif self._was_issue_active:
+                self._post_roll_deadline_ts = now_ts + float(self._cfg.stop_grace_seconds)
 
-        # Write the current frame and enforce the max-clip-length cap.
-        self.write_frame(frame_bgr)
+            self._enqueue_frame(frame_bgr=frame_bgr, issue_active=issue_active)
 
-    def maybe_start(self, *, now_ts: float, state: str, frame_bgr: np.ndarray) -> None:
-        """
-        Start a new clip if:
-        - state matches trigger_state
-        - not already recording
-        - cooldown has elapsed since the last clip start
-        - a usable VideoWriter can be opened for at least one supported codec/container
-        """
-        # Only start recording when the state matches the configured trigger.
-        if not self._state_matches_trigger(state):
-            return
+            if (not issue_active) and self._post_roll_deadline_ts is not None and now_ts >= self._post_roll_deadline_ts:
+                self._finalize_session()
 
-        # Already recording.
-        if self._writer is not None:
-            return
+        self._pre_roll_buffer.append(frame_bgr.copy())
+        self._was_issue_active = issue_active
 
-        # Enforce cooldown between clip starts.
-        if self._cfg.cooldown_seconds > 0 and (now_ts - self._last_start_ts) < float(self._cfg.cooldown_seconds):
-            return
-
-        # Determine output resolution from the incoming frame.
-        # OpenCV VideoWriter expects frames with exactly this size.
+    def _start_session(self, *, frame_bgr: np.ndarray, now_ts: float) -> None:
         h, w = frame_bgr.shape[:2]
-
-        # Timestamp in the filename uses wall-clock time (human-friendly), not now_ts.
-        # now_ts may be monotonic-ish or overridden; datetime.now() makes filenames predictable.
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         base = Path(self._cfg.assets_dir) / f"nomotion_{ts}"
 
-        # Prefer MP4 (mp4v); fall back to AVI (XVID) if the MP4 writer fails.
-        # This is a pragmatic choice: MP4 is convenient, AVI+XVID tends to work on more systems.
-        writer = self._open_writer(base.with_suffix(".mp4"), w=w, h=h, fps=self._cfg.fps, fourcc="mp4v")
-        if writer is None:
-            writer = self._open_writer(base.with_suffix(".avi"), w=w, h=h, fps=self._cfg.fps, fourcc="XVID")
-            if writer is None:
-                # No supported codec/container available on this system/OpenCV build.
-                return
-
-        # Recording is now active.
-        self._writer = writer
-
-        # Convert desired clip duration into a frame budget (at least 1 frame).
-        # Using frame budget makes the cap deterministic even if update cadence jitters.
-        self._frames_left = max(1, int(round(float(self._cfg.clip_seconds) * float(self._cfg.fps))))
-
-        # Store start time for cooldown calculations.
-        self._last_start_ts = now_ts
-
-        # Clear any pending stop deadline (fresh recording).
-        self._stop_deadline_ts = None
-
-    def write_frame(self, frame_bgr: np.ndarray) -> None:
-        """
-        Append a frame to the current clip and enforce the frame budget.
-
-        Safety:
-        - If called while idle, it is a no-op.
-        """
-        # Guard against accidental calls when idle.
-        if self._writer is None:
+        if not self._enqueue(("start", (base, int(w), int(h), float(self._cfg.fps)))):
             return
 
-        # Append frame to the output file.
-        self._writer.write(frame_bgr)
-        self._frames_left -= 1
+        for buffered in list(self._pre_roll_buffer):
+            self._enqueue_frame(frame_bgr=buffered, issue_active=False)
 
-        # Stop when we've reached the clip-length cap.
-        if self._frames_left <= 0:
-            self.stop()
+        self._session_active = True
+        self._last_start_ts = now_ts
+        self._post_roll_deadline_ts = None
+
+    def _enqueue_frame(self, *, frame_bgr: np.ndarray, issue_active: bool) -> None:
+        self._enqueue(("frame", (frame_bgr.copy(), bool(issue_active))))
+
+    def _finalize_session(self) -> None:
+        if not self._session_active:
+            return
+        self._enqueue(("stop", None))
+        self._session_active = False
+        self._post_roll_deadline_ts = None
 
     def stop(self) -> None:
         """
@@ -204,54 +166,86 @@ class ClipRecorder:
         - We detach the writer first so that if `release()` triggers any callbacks or raises,
           the recorder state is already consistent (idle).
         """
-        # Detach the writer first to avoid re-entrancy issues during release.
-        writer = self._writer
-        self._writer = None
-        self._frames_left = 0
-        self._stop_deadline_ts = None
-
-        # Nothing to stop.
-        if writer is None:
-            return
-
-        # Release the underlying file handle/encoder resources.
-        # OpenCV release normally does not raise, but this is wrapped defensively.
-        try:
-            writer.release()
-        finally:
-            # Kept explicit: release should be attempted even if it raises.
-            pass
+        self._finalize_session()
+        self._enqueue(("shutdown", None))
+        if self._writer_thread.is_alive():
+            self._writer_thread.join(timeout=2.0)
 
     @staticmethod
     def _open_writer(path: Path, *, w: int, h: int, fps: float, fourcc: str) -> Optional[cv2.VideoWriter]:
-        """
-        Try to open an OpenCV VideoWriter for the given path/codec.
-
-        Returns:
-        - A usable VideoWriter if the codec/container is supported and the file can be opened.
-        - None otherwise.
-
-        Notes:
-        - `fourcc` must be a 4-character code understood by OpenCV for the current backend.
-        - `isOpened()` is required: OpenCV can construct a writer object even when it cannot encode.
-        """
-        # Convert the fourcc string into an OpenCV codec integer.
         codec = cv2.VideoWriter_fourcc(*fourcc)
-
-        # Create the writer; OpenCV expects (width, height) as ints.
         writer = cv2.VideoWriter(str(path), codec, float(fps), (int(w), int(h)))
-
-        # Validate that the writer is actually usable (codec available, etc.).
         if not writer.isOpened():
             writer.release()
             return None
-
         return writer
 
-    def _state_matches_trigger(self, state: str) -> bool:
-        """State matches trigger."""
-        s = str(state)
-        trig = str(self._cfg.trigger_state)
-        if s == trig:
+    def _enqueue(self, item: Tuple[str, object]) -> bool:
+        try:
+            self._queue.put_nowait(item)
             return True
-        return s.startswith(f"{trig}_")
+        except Full:
+            return False
+
+    def _writer_worker(self) -> None:
+        writer: Optional[cv2.VideoWriter] = None
+        while True:
+            try:
+                kind, payload = self._queue.get(timeout=0.25)
+            except Empty:
+                continue
+
+            if kind == "shutdown":
+                break
+
+            if kind == "start":
+                if writer is not None:
+                    writer.release()
+                    writer = None
+                base, w, h, fps = payload
+                assert isinstance(base, Path)
+                writer = self._open_writer(base.with_suffix(".mp4"), w=w, h=h, fps=fps, fourcc="mp4v")
+                if writer is None:
+                    writer = self._open_writer(base.with_suffix(".avi"), w=w, h=h, fps=fps, fourcc="XVID")
+                continue
+
+            if kind == "stop":
+                if writer is not None:
+                    writer.release()
+                    writer = None
+                continue
+
+            if kind == "frame":
+                if writer is None:
+                    continue
+                frame_bgr, issue_active = payload
+                assert isinstance(frame_bgr, np.ndarray)
+                out = frame_bgr
+                if bool(issue_active):
+                    out = self._with_issue_marker(frame_bgr)
+                writer.write(out)
+
+        if writer is not None:
+            writer.release()
+
+    @staticmethod
+    def _with_issue_marker(frame_bgr: np.ndarray) -> np.ndarray:
+        h, w = frame_bgr.shape[:2]
+        margin = max(10, int(round(min(w, h) * 0.015)))
+        thickness = max(4, int(round(min(w, h) * 0.006)))
+        x0, y0 = margin, margin
+        x1, y1 = max(x0 + 1, w - margin), max(y0 + 1, h - margin)
+        out = frame_bgr.copy()
+        cv2.rectangle(out, (x0, y0), (x1, y1), color=(0, 255, 255), thickness=thickness)
+        return out
+
+    @staticmethod
+    def _parse_trigger_prefixes(raw: str) -> Tuple[str, ...]:
+        parts = [p.strip().upper() for p in str(raw).split(",") if p.strip()]
+        if not parts:
+            return ("NO_MOTION",)
+        return tuple(parts)
+
+    def _state_matches_trigger(self, state: str) -> bool:
+        s = str(state).upper()
+        return any(s == trig or s.startswith(f"{trig}_") for trig in self._issue_prefixes)

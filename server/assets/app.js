@@ -106,7 +106,10 @@ function statusForDisplay(payload) {
     ...payload,
     video: {
       ...payload.video,
-      tiles: tiles.map((v) => (v === null ? 'disabled' : v)),
+      tiles: tiles.map((v, idx) => ({
+        tile: idx,
+        value: v === null ? 'disabled' : v,
+      })),
     },
   };
 }

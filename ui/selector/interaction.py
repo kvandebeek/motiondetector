@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Callable
 
 from PySide6.QtCore import QPoint, QRect, Qt
 from PySide6.QtWidgets import QWidget
@@ -54,7 +55,8 @@ class SelectorInteractor:
         chrome: ChromeUi,
         tiles: TilesSync,
         region_emitter: RegionEmitter,
-        on_close: callable,
+        on_close: Callable[[], None],
+        are_tile_labels_enabled: Callable[[], bool],
         cfg: InteractionConfig = InteractionConfig(),
     ) -> None:
         # The actual overlay widget whose geometry we manipulate.
@@ -79,6 +81,9 @@ class SelectorInteractor:
 
         # Interaction config (hit-test margin, min size).
         self._cfg = cfg
+
+        # Callback used to gate tile toggling by tile-label visibility state.
+        self._are_tile_labels_enabled = are_tile_labels_enabled
 
         # Current drag mode:
         # - "none" means not dragging
@@ -234,8 +239,8 @@ class SelectorInteractor:
 
         # Clicking inside the grid area with "move" means "toggle tile" if over a tile.
         # This intentionally prevents starting a move drag from inside the grid; the grid is interactive.
-        if mode == "move":
-            idx = self._grid.tile_index_at(widget_rect=self._w.rect(), pos=pos)
+        if mode == "move" and self._are_tile_labels_enabled():
+            idx = self._grid.tile_label_index_at(widget_rect=self._w.rect(), pos=pos)
             if idx is not None:
                 self._tiles.toggle(idx)
                 return True

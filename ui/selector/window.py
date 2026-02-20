@@ -138,6 +138,7 @@ class SelectorWindow(QWidget):
             tiles=self._tiles_sync,
             region_emitter=self._region_emitter,
             on_close=self._handle_close,
+            are_tile_labels_enabled=lambda: bool(self._show_tile_numbers),
             cfg=InteractionConfig(),
         )
 

@@ -15,7 +15,7 @@ import {
   putJson,
 } from './api.js';
 import { fmtTime } from './utils.js';
-import { drawAudioChart, drawChart } from './chart.js';
+import { drawAudioChart, drawBlockinessChart, drawChart } from './chart.js';
 import { drawTilesHeatmap, getGridAndTiles, tileIndexFromCanvasClick } from './heatmap.js';
 
 const jsonBox = document.getElementById('jsonBox');
@@ -53,6 +53,7 @@ const regionHMinusBtn = document.getElementById('regionHMinus');
 const regionHPlusBtn = document.getElementById('regionHPlus');
 
 const chartCanvas = document.getElementById('chart');
+const blockinessChartCanvas = document.getElementById('blockinessChart');
 const audioChartCanvas = document.getElementById('audioChart');
 const heatCanvas = document.getElementById('tilesHeatmap');
 
@@ -307,9 +308,11 @@ async function tick() {
   try {
     const hist = await fetchJson(HISTORY_URL);
     drawChart(chartCanvas, hist.history || []);
+    drawBlockinessChart(blockinessChartCanvas, hist.history || []);
     drawAudioChart(audioChartCanvas, hist.history || []);
   } catch {
     drawChart(chartCanvas, []);
+    drawBlockinessChart(blockinessChartCanvas, []);
     drawAudioChart(audioChartCanvas, []);
   }
 

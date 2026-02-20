@@ -2,7 +2,6 @@
 // server/assets/chart.js
 import { clamp01 } from './utils.js';
 
-// drawChart keeps this part of the interface easy to understand and use.
 export function drawChart(canvas, historyPayloads) {
   drawSeriesChart({
     canvas,
@@ -16,10 +15,27 @@ export function drawChart(canvas, historyPayloads) {
     peakColor: 'rgba(255, 80, 80, 0.95)',
     yLabelTop: 'MAX',
     yLabelBottom: 'MIN',
+    clampValues: true,
   });
 }
 
-// drawAudioChart keeps this part of the interface easy to understand and use.
+export function drawBlockinessChart(canvas, historyPayloads) {
+  drawSeriesChart({
+    canvas,
+    historyPayloads,
+    mapper: (p) => ({
+      mean: Number(p?.video?.blockiness?.score_ema),
+      peak: Number(p?.video?.blockiness?.score),
+    }),
+    emptyText: 'Collecting blockiness history…',
+    meanColor: 'rgba(80, 180, 255, 0.95)',
+    peakColor: 'rgba(255, 170, 60, 0.95)',
+    yLabelTop: 'HIGH',
+    yLabelBottom: 'LOW',
+    clampValues: false,
+  });
+}
+
 export function drawAudioChart(canvas, historyPayloads) {
   drawSeriesChart({
     canvas,
@@ -33,11 +49,11 @@ export function drawAudioChart(canvas, historyPayloads) {
     peakColor: 'rgba(255, 80, 80, 0.95)',
     yLabelTop: 'MAX',
     yLabelBottom: 'MIN',
+    clampValues: true,
   });
 }
 
-// drawSeriesChart keeps this part of the interface easy to understand and use.
-function drawSeriesChart({ canvas, historyPayloads, mapper, emptyText, meanColor, peakColor, yLabelTop, yLabelBottom }) {
+function drawSeriesChart({ canvas, historyPayloads, mapper, emptyText, meanColor, peakColor, yLabelTop, yLabelBottom, clampValues }) {
   const ctx = canvas?.getContext?.('2d');
   if (!ctx) return;
 
@@ -51,14 +67,22 @@ function drawSeriesChart({ canvas, historyPayloads, mapper, emptyText, meanColor
   const pts = (historyPayloads || [])
     .map((p) => {
       const mapped = mapper(p) || {};
+      const meanRaw = Number(mapped.mean);
+      const peakRaw = Number(mapped.peak);
+      const mean = Number.isFinite(meanRaw) ? meanRaw : 0;
+      const peak = Number.isFinite(peakRaw) ? peakRaw : 0;
       return {
         t: Number(p?.timestamp) || 0,
-        mean: clamp01(mapped.mean),
-        peak: clamp01(mapped.peak),
+        mean: clampValues ? clamp01(mean) : Math.max(0, mean),
+        peak: clampValues ? clamp01(peak) : Math.max(0, peak),
       };
     })
     .filter((p) => p.t > 0)
     .sort((a, b) => a.t - b.t);
+
+  const yMax = clampValues
+    ? 1
+    : Math.max(1, ...pts.map((p) => Math.max(p.mean, p.peak)));
 
   ctx.strokeStyle = 'rgba(255,255,255,0.08)';
   ctx.lineWidth = 1;
@@ -74,47 +98,27 @@ function drawSeriesChart({ canvas, historyPayloads, mapper, emptyText, meanColor
     ctx.fillStyle = 'rgba(255,255,255,0.55)';
     ctx.font = '16px system-ui';
     ctx.fillText(emptyText, 16, 28);
+  } else {
+    const tMin = pts[0].t;
+    const tMax = pts[pts.length - 1].t;
+    const tSpan = Math.max(1e-6, tMax - tMin);
 
-    if (pts.length === 1) {
-      const yMean = (h - 20) - pts[0].mean * (h - 40);
-      const yPeak = (h - 20) - pts[0].peak * (h - 40);
-      ctx.fillStyle = meanColor;
+    const drawLine = (key, color) => {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(40, yMean, 3, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = peakColor;
-      ctx.beginPath();
-      ctx.arc(44, yPeak, 3, 0, Math.PI * 2);
-      ctx.fill();
-    }
+      for (let i = 0; i < pts.length; i++) {
+        const x = 40 + ((pts[i].t - tMin) / tSpan) * (w - 50);
+        const y = (h - 20) - (Math.min(yMax, pts[i][key]) / yMax) * (h - 40);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    };
 
-    ctx.fillStyle = 'rgba(255,255,255,0.55)';
-    ctx.font = '12px system-ui';
-    ctx.fillText(yLabelTop, 10, 20);
-    ctx.fillText(yLabelBottom, 10, h - 20);
-    return;
+    drawLine('mean', meanColor);
+    drawLine('peak', peakColor);
   }
-
-  const tMin = pts[0].t;
-  const tMax = pts[pts.length - 1].t;
-  const tSpan = Math.max(1e-6, tMax - tMin);
-
-// drawLine keeps this part of the interface easy to understand and use.
-  const drawLine = (key, color) => {
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    for (let i = 0; i < pts.length; i++) {
-      const x = 40 + ((pts[i].t - tMin) / tSpan) * (w - 50);
-      const y = (h - 20) - pts[i][key] * (h - 40);
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-  };
-
-  drawLine('mean', meanColor);
-  drawLine('peak', peakColor);
 
   ctx.fillStyle = 'rgba(255,255,255,0.55)';
   ctx.font = '12px system-ui';

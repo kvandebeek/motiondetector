@@ -91,6 +91,15 @@ class AppConfig:
     grid_cols: int
 
     # -----------------------------
+    # Blockiness analysis settings
+    # -----------------------------
+    blockiness_enabled: bool
+    blockiness_block_sizes: list[int]
+    blockiness_sample_every_frames: int
+    blockiness_downscale_width: int
+    blockiness_ema_alpha: float
+
+    # -----------------------------
     # Recording settings
     # -----------------------------
     recording_enabled: bool
@@ -220,6 +229,15 @@ def _opt_str(v: Any, key: str, default: str) -> str:
     raise ValueError(f"Missing or invalid '{key}' (expected non-empty string)")
 
 
+def _opt_num(v: Any, key: str, default: float) -> float:
+    """Optional number with default."""
+    if v is None:
+        return float(default)
+    if isinstance(v, (int, float)):
+        return float(v)
+    raise ValueError(f"Missing or invalid '{key}' (expected number)")
+
+
 def load_config(path: str) -> AppConfig:
     """
     Load and validate config from a JSON file and return an `AppConfig`.
@@ -253,7 +271,7 @@ def load_config(path: str) -> AppConfig:
     # UI.initial_region is required and must be a dict.
     initial_region_obj = _require_obj(ui, "initial_region")
 
-    # Optional sections: recording + audio.
+    # Optional sections: recording + audio + blockiness.
     recording = raw.get("recording")
     if recording is None:
         recording_obj: Dict[str, Any] = {}
@@ -269,6 +287,14 @@ def load_config(path: str) -> AppConfig:
         audio_obj = audio
     else:
         raise ValueError("Missing or invalid 'audio' object in config (expected object)")
+
+    blockiness = raw.get("blockiness")
+    if blockiness is None:
+        blockiness_obj: Dict[str, Any] = {}
+    elif isinstance(blockiness, dict):
+        blockiness_obj = blockiness
+    else:
+        raise ValueError("Missing or invalid 'blockiness' object in config (expected object)")
 
     # ---- Server ----
     server_host = _require_str(server.get("host"), "server.host")
@@ -307,6 +333,39 @@ def load_config(path: str) -> AppConfig:
     grid_rows = int(_require_num(motion.get("grid_rows"), "motion.grid_rows"))
     if grid_cols <= 0 or grid_rows <= 0:
         raise ValueError("motion.grid_cols and motion.grid_rows must be > 0")
+
+    # ---- Blockiness ----
+    blockiness_enabled = _opt_bool(blockiness_obj.get("enabled"), "blockiness.enabled", True)
+    block_sizes_raw = blockiness_obj.get("block_sizes", [8, 16])
+    if not isinstance(block_sizes_raw, list) or not block_sizes_raw:
+        raise ValueError("blockiness.block_sizes must be a non-empty list[int]")
+    blockiness_block_sizes: list[int] = []
+    for b in block_sizes_raw:
+        if not isinstance(b, (int, float)):
+            raise ValueError("blockiness.block_sizes must contain only numbers")
+        bb = int(b)
+        if bb <= 1:
+            raise ValueError("blockiness.block_sizes values must be > 1")
+        blockiness_block_sizes.append(bb)
+    blockiness_block_sizes = sorted(set(blockiness_block_sizes))
+    blockiness_sample_every_frames = _opt_int(
+        blockiness_obj.get("sample_every_frames"),
+        "blockiness.sample_every_frames",
+        25,
+    )
+    blockiness_downscale_width = _opt_int(
+        blockiness_obj.get("downscale_width"),
+        "blockiness.downscale_width",
+        640,
+    )
+    blockiness_ema_alpha = _opt_num(blockiness_obj.get("ema_alpha"), "blockiness.ema_alpha", 0.25)
+
+    if blockiness_sample_every_frames <= 0:
+        raise ValueError("blockiness.sample_every_frames must be > 0")
+    if blockiness_downscale_width <= 0:
+        raise ValueError("blockiness.downscale_width must be > 0")
+    if not (0.0 <= blockiness_ema_alpha <= 1.0):
+        raise ValueError("blockiness.ema_alpha must be in [0, 1]")
 
     # ---- Recording ----
     # Defaults make recording enabled unless explicitly disabled.
@@ -421,6 +480,11 @@ def load_config(path: str) -> AppConfig:
         tile_full_scale=tile_full_scale,
         grid_rows=grid_rows,
         grid_cols=grid_cols,
+        blockiness_enabled=blockiness_enabled,
+        blockiness_block_sizes=blockiness_block_sizes,
+        blockiness_sample_every_frames=blockiness_sample_every_frames,
+        blockiness_downscale_width=blockiness_downscale_width,
+        blockiness_ema_alpha=blockiness_ema_alpha,
         recording_enabled=recording_enabled,
         recording_trigger_state=recording_trigger_state,
         recording_clip_seconds=recording_clip_seconds,

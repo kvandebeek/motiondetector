@@ -33,6 +33,7 @@ import time
 from collections import deque
 from typing import Callable, Deque, Dict, List, Optional, Tuple, Set
 
+import cv2
 import numpy as np
 
 from analyzer.capture import Region, ScreenCapturer
@@ -66,6 +67,12 @@ class DetectionParams:
 
     grid_rows: int
     grid_cols: int
+
+    blockiness_enabled: bool
+    blockiness_block_sizes: List[int]
+    blockiness_sample_every_frames: int
+    blockiness_downscale_width: int
+    blockiness_ema_alpha: float
 
     record_enabled: bool
     record_trigger_state: str
@@ -237,6 +244,59 @@ def _apply_inset(gray: np.ndarray, inset_px: int) -> Tuple[np.ndarray, Dict[str,
     return roi, {"x": int(x0), "y": int(y0), "width": int(x1 - x0), "height": int(y1 - y0)}
 
 
+
+
+def _downscale_gray(gray: np.ndarray, downscale_width: int) -> np.ndarray:
+    """Downscale grayscale image to target width while preserving aspect ratio."""
+    h, w = gray.shape
+    target_w = max(1, int(downscale_width))
+    if w <= target_w:
+        return gray
+    target_h = max(1, int(round((h * target_w) / float(w))))
+    return cv2.resize(gray, (target_w, target_h), interpolation=cv2.INTER_AREA)
+
+
+def _gradient_mean_at_positions(gray: np.ndarray, positions: np.ndarray, axis: int) -> float:
+    """Mean absolute pixel gradient over edge positions along x (axis=1) or y (axis=0)."""
+    if positions.size == 0:
+        return 0.0
+    arr = gray.astype(np.int16)
+    if axis == 1:
+        diffs = np.abs(arr[:, positions] - arr[:, positions - 1])
+    else:
+        diffs = np.abs(arr[positions, :] - arr[positions - 1, :])
+    return float(diffs.mean()) if diffs.size else 0.0
+
+
+def _blockiness_score_for_size(gray: np.ndarray, block_size: int, eps: float = 1e-6) -> Optional[float]:
+    """Compute no-reference blockiness score for one block size."""
+    h, w = gray.shape
+    b = max(2, int(block_size))
+    if h < 2 or w < 2:
+        return None
+
+    x_all = np.arange(1, w, dtype=np.int32)
+    y_all = np.arange(1, h, dtype=np.int32)
+    x_bound = x_all[(x_all % b) == 0]
+    y_bound = y_all[(y_all % b) == 0]
+    if x_bound.size == 0 and y_bound.size == 0:
+        return None
+
+    x_dist = np.minimum(x_all % b, b - (x_all % b))
+    y_dist = np.minimum(y_all % b, b - (y_all % b))
+    x_int = x_all[x_dist > 1]
+    y_int = y_all[y_dist > 1]
+
+    gv_bound = _gradient_mean_at_positions(gray, x_bound, axis=1)
+    gh_bound = _gradient_mean_at_positions(gray, y_bound, axis=0)
+    gv_int = _gradient_mean_at_positions(gray, x_int, axis=1)
+    gh_int = _gradient_mean_at_positions(gray, y_int, axis=0)
+
+    bound = 0.5 * (gv_bound + gh_bound)
+    interior = 0.5 * (gv_int + gh_int)
+    score = bound / (interior + float(eps))
+    return float(max(0.0, score))
+
 def _confidence_from_thresholds(*, ema_activity: float, no_thr: float, low_thr: float) -> float:
     """
     A simple, monotonic confidence estimate in [0..1] based on distance from thresholds.
@@ -302,6 +362,13 @@ class MonitorLoop:
         self._last_update_ts: float = 0.0
         self._prev_state: str = "ERROR"
         self._no_motion_votes: Deque[Tuple[float, bool]] = deque()
+
+        block_sizes = list(getattr(self._params, "blockiness_block_sizes", [8, 16]) or [8, 16])
+        self._blockiness_block_sizes: List[int] = sorted(set(max(2, int(v)) for v in block_sizes))
+        self._blockiness_frame_index: int = 0
+        self._blockiness_score: Optional[float] = None
+        self._blockiness_score_ema: Optional[float] = None
+        self._blockiness_score_by_block: Dict[str, Optional[float]] = {str(b): None for b in self._blockiness_block_sizes}
 
         self._recorder = ClipRecorder(
             RecorderConfig(
@@ -429,6 +496,54 @@ class MonitorLoop:
             return "NO_MOTION"
         return "MOTION_OR_LOW"
 
+    def _maybe_update_blockiness(self, gray: np.ndarray) -> None:
+        """Sample blockiness every N frames and keep last value between samples."""
+        self._blockiness_frame_index += 1
+        if not bool(getattr(self._params, "blockiness_enabled", True)):
+            return
+
+        every = max(1, int(getattr(self._params, "blockiness_sample_every_frames", 25)))
+        if (self._blockiness_frame_index % every) != 0:
+            return
+
+        scaled = _downscale_gray(gray, int(getattr(self._params, "blockiness_downscale_width", 640)))
+        score_by_block: Dict[str, Optional[float]] = {}
+        scores: List[float] = []
+        for b in self._blockiness_block_sizes:
+            score_b = _blockiness_score_for_size(scaled, b)
+            score_by_block[str(b)] = None if score_b is None else float(score_b)
+            if score_b is not None:
+                scores.append(float(score_b))
+
+        self._blockiness_score_by_block = score_by_block
+        self._blockiness_score = max(scores) if scores else None
+        if self._blockiness_score is not None:
+            a = float(getattr(self._params, "blockiness_ema_alpha", 0.25))
+            if self._blockiness_score_ema is None:
+                self._blockiness_score_ema = float(self._blockiness_score)
+            else:
+                self._blockiness_score_ema = (a * float(self._blockiness_score)) + ((1.0 - a) * float(self._blockiness_score_ema))
+
+    def _blockiness_payload(self) -> Dict:
+        """Expose blockiness data in a stable JSON shape."""
+        enabled = bool(getattr(self._params, "blockiness_enabled", True))
+        return {
+            "enabled": enabled,
+            "block_sizes": list(self._blockiness_block_sizes),
+            "score": float(self._blockiness_score) if (enabled and self._blockiness_score is not None) else None,
+            "score_ema": float(self._blockiness_score_ema) if (enabled and self._blockiness_score_ema is not None) else None,
+            "score_by_block": {
+                str(b): (
+                    float(self._blockiness_score_by_block.get(str(b)))
+                    if (enabled and self._blockiness_score_by_block.get(str(b)) is not None)
+                    else None
+                )
+                for b in self._blockiness_block_sizes
+            },
+            "sample_every_frames": int(getattr(self._params, "blockiness_sample_every_frames", 25)),
+            "downscale_width": int(getattr(self._params, "blockiness_downscale_width", 640)),
+        }
+
     def _process_frame(self, *, frame: np.ndarray, ts: float, region: Region) -> Dict:
         """Process frame for this module's workflow."""
         gray_full = _to_gray_u8(frame)
@@ -438,6 +553,7 @@ class MonitorLoop:
         n_tiles = rows * cols
 
         gray, _inset_rect = _apply_inset(gray_full, int(getattr(self._params, "analysis_inset_px", 10)))
+        self._maybe_update_blockiness(gray)
 
         disabled_tiles = self._get_disabled_tiles(n_tiles=n_tiles)
         disabled_set: Set[int] = set(disabled_tiles)
@@ -472,6 +588,7 @@ class MonitorLoop:
                 stale=False,
                 stale_age_sec=0.0,
                 audio=audio,
+                blockiness=self._blockiness_payload(),
             )
 
         diff = np.abs(gray.astype(np.int16) - self._prev_gray.astype(np.int16)).astype(np.uint8)
@@ -581,6 +698,7 @@ class MonitorLoop:
             stale=False,
             stale_age_sec=0.0,
             audio=audio,
+            blockiness=self._blockiness_payload(),
         )
 
         if not all_tiles_disabled:
@@ -618,6 +736,7 @@ class MonitorLoop:
         stale: bool,
         stale_age_sec: float,
         audio,
+        blockiness: Optional[Dict[str, object]] = None,
     ) -> Dict:
         tiles_list: List[Optional[float]] = [float(x) if x is not None else None for x in tiles]
         tiles_indexed = [
@@ -642,6 +761,15 @@ class MonitorLoop:
                 "disabled_tiles": disabled_tiles_list,
                 "stale": bool(stale),
                 "stale_age_sec": float(stale_age_sec),
+                "blockiness": dict(blockiness) if isinstance(blockiness, dict) else {
+                    "enabled": False,
+                    "block_sizes": [8, 16],
+                    "score": None,
+                    "score_ema": None,
+                    "score_by_block": {"8": None, "16": None},
+                    "sample_every_frames": 25,
+                    "downscale_width": 640,
+                },
             },
             "audio": {
                 "available": bool(audio.available),
@@ -680,6 +808,15 @@ class MonitorLoop:
                 "disabled_tiles": [],
                 "stale": True,
                 "stale_age_sec": 0.0,
+                "blockiness": {
+                    "enabled": False,
+                    "block_sizes": [8, 16],
+                    "score": None,
+                    "score_ema": None,
+                    "score_by_block": {"8": None, "16": None},
+                    "sample_every_frames": 25,
+                    "downscale_width": 640,
+                },
             },
             "audio": {
                 "available": audio_available,

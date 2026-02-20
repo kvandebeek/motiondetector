@@ -226,6 +226,7 @@ class StatusStore:
             "disabled_tiles": sorted(disabled_set),
             "stale": bool(video.get("stale", False)),
             "stale_age_sec": float(video.get("stale_age_sec", 0.0)),
+            "blockiness": self._normalize_blockiness(video.get("blockiness")),
         }
 
         # Copy original payload and replace sections with normalized versions.
@@ -478,6 +479,47 @@ class StatusStore:
             self._history.popleft()
 
     @staticmethod
+    def _normalize_blockiness(raw: Any) -> Dict[str, Any]:
+        """Return blockiness section in a stable shape."""
+        if isinstance(raw, dict):
+            enabled = bool(raw.get("enabled", False))
+            block_sizes_raw = raw.get("block_sizes", [8, 16])
+            block_sizes = [int(v) for v in block_sizes_raw if isinstance(v, (int, float)) and int(v) > 1]
+            if not block_sizes:
+                block_sizes = [8, 16]
+            score_by_raw = raw.get("score_by_block") if isinstance(raw.get("score_by_block"), dict) else {}
+            score_by: Dict[str, float | None] = {}
+            for b in block_sizes:
+                val = score_by_raw.get(str(b))
+                score_by[str(b)] = float(val) if isinstance(val, (int, float)) else None
+
+            score_raw = raw.get("score")
+            score_ema_raw = raw.get("score_ema")
+            sample_raw = raw.get("sample_every_frames", 25)
+            downscale_raw = raw.get("downscale_width", 640)
+            sample = int(sample_raw) if isinstance(sample_raw, (int, float)) else 25
+            downscale = int(downscale_raw) if isinstance(downscale_raw, (int, float)) else 640
+            return {
+                "enabled": enabled,
+                "block_sizes": block_sizes,
+                "score": float(score_raw) if isinstance(score_raw, (int, float)) else None,
+                "score_ema": float(score_ema_raw) if isinstance(score_ema_raw, (int, float)) else None,
+                "score_by_block": score_by,
+                "sample_every_frames": max(1, sample),
+                "downscale_width": max(1, downscale),
+            }
+
+        return {
+            "enabled": False,
+            "block_sizes": [8, 16],
+            "score": None,
+            "score_ema": None,
+            "score_by_block": {"8": None, "16": None},
+            "sample_every_frames": 25,
+            "downscale_width": 640,
+        }
+
+    @staticmethod
     def _default_payload(*, reason: str, grid_rows: int, grid_cols: int, show_tile_numbers: bool) -> JsonDict:
         """
         Create a well-formed “error/empty” payload used before the analyzer produces data.
@@ -508,6 +550,15 @@ class StatusStore:
                 "disabled_tiles": [],
                 "stale": True,
                 "stale_age_sec": 0.0,
+                "blockiness": {
+                    "enabled": False,
+                    "block_sizes": [8, 16],
+                    "score": None,
+                    "score_ema": None,
+                    "score_by_block": {"8": None, "16": None},
+                    "sample_every_frames": 25,
+                    "downscale_width": 640,
+                },
             },
             "audio": {"state": "ERROR", "reason": "not_initialized", "level": 0.0, "rms": 0.0, "peak": 0.0, "baseline": 0.0, "threshold": 0.0, "detected": False, "timestamp": float(now)},
             "ui": {"show_tile_numbers": bool(show_tile_numbers)},

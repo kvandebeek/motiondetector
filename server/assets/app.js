@@ -194,13 +194,13 @@ function renderStatus(payload) {
   tsLabel.textContent = fmtTime(payload.timestamp);
 
   const vState = payload?.video?.state ?? '—';
-  const mean = n(payload?.video?.motion_mean, 0);
+  const motionPeak = n(payload?.video?.motion_instant_top1, 0);
   const oState = payload?.overall?.state ?? '—';
   const audioPeak = Math.max(n(payload?.audio?.left, 0), n(payload?.audio?.right, 0));
 
   pillVideo.textContent = `video: ${vState}`;
   setVideoStateTone(vState, oState);
-  pillMean.textContent = `motion_mean: ${mean.toFixed(4)}`;
+  pillMean.textContent = `motion_peak: ${motionPeak.toFixed(4)}`;
   pillAudioPeak.textContent = `audio peak: ${audioPeak.toFixed(1)}`;
   pillOverall.textContent = `overall: ${oState}`;
 

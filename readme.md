@@ -120,6 +120,11 @@ Optional trainer modes:
 - `python main.py --testdata-slow`
 - `python main.py --testdata --testdata-seed 1337`
 
+Audio device discovery/selection utility (stand-alone):
+
+- `python tools/audio_device_selector.py` (interactive selection)
+- `python tools/audio_device_selector.py --select 0` (non-interactive)
+
 It will:
 - start the FastAPI server
 - start the monitor loop thread
@@ -145,11 +150,13 @@ Current config structure (high-level):
 - `audio.*` (optional loopback meter settings)
   - `enabled` (default `true`)
   - `backend` (`pycaw`/`wasapi_session` for WASAPI session metering, or `pyaudiowpatch` for loopback capture)
+  - `device_id` (stable identifier written by `tools/audio_device_selector.py`)
   - `device_index` (`-1` for auto-select, or a concrete loopback input index)
   - `device_substr` (optional substring match for auto-select)
   - `samplerate`, `channels`, `block_ms`
   - `process_names` (comma-separated optional process filter, e.g. `chrome.exe,msedge.exe`)
   - `on_threshold`, `off_threshold`, `hold_ms`, `smooth_samples` for audio-present hysteresis
+  - if `audio.device_id` is configured but not found at runtime, the app warns and falls back to auto-selection
 - `ui.*` (initial region + visuals + `show_tile_numbers`)
   - includes `show_overlay_state` when enabled
 

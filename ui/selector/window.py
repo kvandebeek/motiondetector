@@ -363,8 +363,13 @@ class SelectorWindow(QWidget):
         pos = event.position().toPoint()
         global_pos = event.globalPosition().toPoint()
         if self._interact.on_mouse_press(button=event.button(), pos=pos, global_pos=global_pos):
-            if self._chrome.close_hover:
-                self.update()
+            # Always repaint after handled presses.
+            #
+            # Why: tile clicks can change disabled state synchronously via TilesSync.toggle(),
+            # but we previously repainted only for close-button hover changes. That allowed
+            # overlay visuals to lag behind server state until another repaint trigger occurred
+            # (e.g. mouse move, timer-driven poll change, resize).
+            self.update()
             return
 
     def mouseMoveEvent(self, event) -> None:  # type: ignore[override]

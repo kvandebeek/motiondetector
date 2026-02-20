@@ -6,6 +6,9 @@ from dataclasses import dataclass
 from typing import Optional
 
 from PySide6.QtCore import QPoint, QRect
+from PySide6.QtGui import QFont, QFontMetrics
+
+from ui.selector.models import clamp_int
 
 
 @dataclass(frozen=True)
@@ -124,3 +127,57 @@ class GridGeometry:
         row = next((r for r in range(rows) if y_edges[r] <= rel_y < y_edges[r + 1]), rows - 1)
 
         return row * cols + col
+
+    @staticmethod
+    def _tile_font(*, tile_h: int) -> QFont:
+        """Match selector painter font sizing for tile number labels."""
+        px = clamp_int(int(round(tile_h * 0.24)), 10, 32)
+        f = QFont()
+        f.setPixelSize(px)
+        f.setBold(True)
+        return f
+
+    @staticmethod
+    def _tile_label_badge_rect(*, tile: QRect, label: str, tile_h: int) -> QRect:
+        """Match selector painter label-badge geometry for hit testing."""
+        fm = QFontMetrics(GridGeometry._tile_font(tile_h=tile_h))
+        tw = fm.horizontalAdvance(label)
+        th = fm.height()
+
+        pad = clamp_int(int(round(min(tile.width(), tile.height()) * 0.06)), 4, 10)
+        bw = min(tile.width(), tw + 2 * pad)
+        bh = min(tile.height(), th + 2 * pad)
+
+        bx = tile.left() + max(0, (tile.width() - bw) // 2)
+        by = tile.top() + max(0, (tile.height() - bh) // 2)
+        return QRect(bx, by, bw, bh)
+
+    def tile_label_index_at(self, *, widget_rect: QRect, pos: QPoint) -> Optional[int]:
+        """
+        Return tile index only when `pos` hits the rendered tile-number badge.
+
+        This deliberately excludes clicks on empty tile area, grid lines, and borders.
+        """
+        inner, x_edges, y_edges = self.tile_rects(widget_rect=widget_rect)
+        if not inner.contains(pos):
+            return None
+
+        left = inner.left()
+        top = inner.top()
+        cols = int(self.grid_cols)
+        rows = int(self.grid_rows)
+        tile_h = max(1, inner.height() // rows)
+
+        for row in range(rows):
+            y0 = top + y_edges[row]
+            y1 = top + y_edges[row + 1]
+            for col in range(cols):
+                x0 = left + x_edges[col]
+                x1 = left + x_edges[col + 1]
+                tile = QRect(x0, y0, max(1, x1 - x0), max(1, y1 - y0)).adjusted(0, 0, -1, -1)
+                idx = row * cols + col
+                label_rect = self._tile_label_badge_rect(tile=tile, label=str(idx + 1), tile_h=tile_h)
+                if label_rect.contains(pos):
+                    return idx
+
+        return None

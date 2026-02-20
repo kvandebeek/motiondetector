@@ -115,19 +115,20 @@
     </section>
 
 
-    <section class="panel panel-blockiness">
-      <h2><span>Blockiness (last {{HISTORY_SECONDS}}s, higher = worse)</span></h2>
-      <div class="chartwrap">
-        <canvas id="blockinessChart" width="900" height="300"></canvas>
-      </div>
-    </section>
 
     <section class="panel panel-quality">
       <h2><span>Video Quality metrics (last {{HISTORY_SECONDS}}s)</span></h2>
       <div class="chartwrap">
         <canvas id="qualityChart" width="900" height="300"></canvas>
       </div>
-      <div class="subtle" style="margin-top:8px;">ringing, banding, cadence_jitter, duplicate_ratio, motion_blur (+ blockiness EMA)</div>
+      <div class="quality-legend" style="margin-top:8px;">
+        <span class="quality-legend-item quality-ringing">ringing</span>
+        <span class="quality-legend-item quality-banding">banding</span>
+        <span class="quality-legend-item quality-cadence">cadence_jitter</span>
+        <span class="quality-legend-item quality-duplicate">duplicate_ratio</span>
+        <span class="quality-legend-item quality-blur">motion_blur</span>
+        <span class="quality-legend-item quality-blockiness">blockiness</span>
+      </div>
     </section>
 
     <section class="panel panel-quality-events">

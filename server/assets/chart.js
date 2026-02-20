@@ -19,23 +19,6 @@ export function drawChart(canvas, historyPayloads) {
   });
 }
 
-export function drawBlockinessChart(canvas, historyPayloads) {
-  drawSeriesChart({
-    canvas,
-    historyPayloads,
-    mapper: (p) => ({
-      mean: Number(p?.video?.blockiness?.score_ema),
-      peak: Number(p?.video?.blockiness?.score),
-    }),
-    emptyText: 'Collecting blockiness history…',
-    meanColor: 'rgba(80, 180, 255, 0.95)',
-    peakColor: 'rgba(255, 170, 60, 0.95)',
-    yLabelTop: 'HIGH',
-    yLabelBottom: 'LOW',
-    clampValues: false,
-  });
-}
-
 export function drawQualityChart(canvas, historyPayloads) {
   const ctx = canvas?.getContext?.('2d');
   if (!ctx) return;

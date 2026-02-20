@@ -527,7 +527,10 @@ class MonitorLoop:
             a = float(self._params.ema_alpha)
             self._ema_activity = (a * motion_instant_activity) + ((1.0 - a) * self._ema_activity)
 
-            no_motion_candidate = self._ema_activity < float(self._params.no_motion_threshold)
+            # Use the instantaneous top tile for NO_MOTION candidacy so the signal can
+            # drop quickly when movement stops, while still keeping EMA for MOTION/
+            # LOW_ACTIVITY stability and confidence reporting.
+            no_motion_candidate = motion_instant_top1 < float(self._params.no_motion_threshold)
             state_with_grace = self._resolve_video_state_with_grace(
                 ts=ts,
                 no_motion_candidate=no_motion_candidate,

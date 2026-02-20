@@ -80,6 +80,7 @@ class DetectionParams:
     audio_backend: str = "pyaudiowpatch"
     audio_device_substr: str = ""
     audio_device_index: Optional[int] = None
+    audio_device_id: str = ""
     audio_samplerate: int = 48_000
     audio_channels: int = 2
     audio_block_ms: int = 250
@@ -319,6 +320,7 @@ class MonitorLoop:
             backend=str(params.audio_backend),
             device_substr=str(params.audio_device_substr),
             device_index=params.audio_device_index,
+            device_id=str(params.audio_device_id),
             samplerate=int(params.audio_samplerate),
             channels=int(params.audio_channels),
             block_ms=int(params.audio_block_ms),

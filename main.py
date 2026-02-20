@@ -242,6 +242,7 @@ def main() -> int:
         audio_backend=str(getattr(cfg, "audio_backend", "pyaudiowpatch")),
         audio_device_substr=str(getattr(cfg, "audio_device_substr", "")),
         audio_device_index=(int(getattr(cfg, "audio_device_index", -1)) if int(getattr(cfg, "audio_device_index", -1)) >= 0 else None),
+        audio_device_id=str(getattr(cfg, "audio_device_id", "")),
         audio_samplerate=int(getattr(cfg, "audio_samplerate", 48_000)),
         audio_channels=int(getattr(cfg, "audio_channels", 2)),
         audio_block_ms=int(getattr(cfg, "audio_block_ms", 250)),

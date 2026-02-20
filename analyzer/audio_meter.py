@@ -9,6 +9,7 @@ import time
 from typing import Iterable, Optional, Set
 
 import numpy as np
+from analyzer.audio_devices import list_audio_devices, resolve_device_index
 
 try:
     import pyaudiowpatch as pyaudio
@@ -39,6 +40,7 @@ class AudioMeter:
         backend: str = "pyaudiowpatch",
         device_substr: str = "",
         device_index: Optional[int] = None,
+        device_id: str = "",
         samplerate: int = 48_000,
         channels: int = 2,
         block_ms: int = 250,
@@ -52,6 +54,7 @@ class AudioMeter:
         self._backend = str(backend or "pyaudiowpatch").strip().lower()
         self._device_substr = str(device_substr or "").strip().lower()
         self._device_index = int(device_index) if device_index is not None else None
+        self._device_id = str(device_id or "").strip()
         self._samplerate = max(1, int(samplerate))
         self._channels = max(1, int(channels))
         self._block_ms = max(1, int(block_ms))
@@ -107,8 +110,26 @@ class AudioMeter:
 
     def _pick_loopback_device(self, pa: "pyaudio.PyAudio") -> int:
         """Handle pick loopback device for this module."""
+        if self._device_id:
+            try:
+                resolved = resolve_device_index(self._device_id)
+            except Exception as e:
+                print(f"[audio] failed to resolve configured device_id '{self._device_id}': {e}")
+                resolved = None
+            if resolved is not None:
+                return int(resolved)
+            print(f"[audio] configured device_id '{self._device_id}' not found; falling back to auto-selection")
+
         if self._device_index is not None:
             return int(self._device_index)
+
+        try:
+            devices = list_audio_devices()
+            loopback_candidate = next((d for d in devices if d.is_loopback_like), None)
+            if loopback_candidate is not None:
+                return int(loopback_candidate.index)
+        except Exception:
+            pass
 
         preferred: Optional[int] = None
         fallback: Optional[int] = None

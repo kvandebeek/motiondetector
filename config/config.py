@@ -106,6 +106,7 @@ class AppConfig:
     audio_backend: str
     audio_device_substr: str
     audio_device_index: int
+    audio_device_id: str
     audio_samplerate: int
     audio_channels: int
     audio_block_ms: int
@@ -342,6 +343,13 @@ def load_config(path: str) -> AppConfig:
     else:
         raise ValueError("Missing or invalid 'audio.device_substr' (expected string)")
     audio_device_index = _opt_int(audio_obj.get("device_index"), "audio.device_index", -1)
+    audio_device_id_raw = audio_obj.get("device_id", "")
+    if audio_device_id_raw is None:
+        audio_device_id = ""
+    elif isinstance(audio_device_id_raw, str):
+        audio_device_id = audio_device_id_raw.strip()
+    else:
+        raise ValueError("Missing or invalid 'audio.device_id' (expected string)")
     audio_samplerate = _opt_int(audio_obj.get("samplerate"), "audio.samplerate", 48_000)
     audio_channels = _opt_int(audio_obj.get("channels"), "audio.channels", 2)
     audio_block_ms = _opt_int(audio_obj.get("block_ms"), "audio.block_ms", 250)
@@ -422,6 +430,7 @@ def load_config(path: str) -> AppConfig:
         audio_backend=audio_backend,
         audio_device_substr=audio_device_substr,
         audio_device_index=audio_device_index,
+        audio_device_id=audio_device_id,
         audio_samplerate=audio_samplerate,
         audio_channels=audio_channels,
         audio_block_ms=audio_block_ms,

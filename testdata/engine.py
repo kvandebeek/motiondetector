@@ -42,6 +42,9 @@ class FrameOut:
     ema_activity: float
     expected_state: str
     subtitle: Optional[SubtitleOverlay] = None
+    audio_stereo: Optional[np.ndarray] = None
+    audio_sample_rate_hz: int = 48_000
+    audio_pattern: str = ""
 
 
 class TestDataEngine:
@@ -151,6 +154,14 @@ class TestDataEngine:
         # spinner state (streaming realism)
         self._spinner_phase = 0.0
 
+        # audio synthesis state
+        self._audio_sample_rate_hz = 48_000
+        self._audio_phase = 0.0
+        self._audio_pan_phase = 0.0
+        self._audio_freq_lfo_phase = 0.0
+        self._audio_vol_lfo_phase = 0.0
+        self._pink_state = np.zeros(7, dtype=np.float32)
+
         # NEW: true NO_MOTION micro-noise state for scene 1
         self._no_motion_frame_i = 0
         self._no_motion_noise: Optional[np.ndarray] = None
@@ -215,6 +226,7 @@ class TestDataEngine:
             self._init_scene(self._scene0)
 
         rgb, subtitle = self._render_scene(scene0=self._scene0, dt=dt)
+        audio_stereo = self._render_audio(scene0=self._scene0, dt=dt)
 
         # generator-side activity proxy (mean abs diff, scaled, normalized, EMA)
         gray = (0.299 * rgb[:, :, 0] + 0.587 * rgb[:, :, 1] + 0.114 * rgb[:, :, 2]).astype(np.uint8)
@@ -241,6 +253,9 @@ class TestDataEngine:
             ema_activity=float(self._ema),
             expected_state=self._expected_state(idx1),
             subtitle=subtitle,
+            audio_stereo=audio_stereo,
+            audio_sample_rate_hz=int(self._audio_sample_rate_hz),
+            audio_pattern=self._audio_pattern_name(idx1),
         )
 
     # ---------------- durations / metadata ----------------
@@ -336,6 +351,20 @@ class TestDataEngine:
             return self._variant_tag(idx1)
         return ""
 
+    def _audio_pattern_name(self, idx1: int) -> str:
+        """Return audio pattern label for this scene."""
+        patterns = [
+            "tone-on-off",
+            "stereo-pan-lr",
+            "volume-sweep",
+            "frequency-sweep",
+            "static-noise",
+            "pink-noise",
+            "grey-noise",
+            "white-noise",
+        ]
+        return patterns[(idx1 - 1) % len(patterns)]
+
     def _expected_state(self, idx1: int) -> str:
         """Handle expected state for this module."""
         if idx1 == 1:
@@ -384,6 +413,12 @@ class TestDataEngine:
         if idx1 == 1:
             self._no_motion_frame_i = 0
             self._no_motion_noise = None
+
+        self._audio_phase = 0.0
+        self._audio_pan_phase = 0.0
+        self._audio_freq_lfo_phase = 0.0
+        self._audio_vol_lfo_phase = 0.0
+        self._pink_state = np.zeros(7, dtype=np.float32)
 
         if idx1 in (6, 7):
             self._sub_text = "Lorem ipsum…"
@@ -515,6 +550,114 @@ class TestDataEngine:
             return self._scene_scrolling_credits(dt=dt), None
 
         return np.zeros((self._h, self._w, 3), dtype=np.uint8), None
+
+    def _render_audio(self, *, scene0: int, dt: float) -> np.ndarray:
+        """Render a stereo audio chunk aligned with the current video frame."""
+        idx1 = scene0 + 1
+        ns = max(1, int(round(float(dt) * float(self._audio_sample_rate_hz))))
+        t = (np.arange(ns, dtype=np.float32) / float(self._audio_sample_rate_hz)).astype(np.float32)
+        pattern = self._audio_pattern_name(idx1)
+
+        if pattern == "tone-on-off":
+            return self._audio_tone_on_off(t)
+        if pattern == "stereo-pan-lr":
+            return self._audio_pan_lr(t)
+        if pattern == "volume-sweep":
+            return self._audio_volume_sweep(t)
+        if pattern == "frequency-sweep":
+            return self._audio_frequency_sweep(t)
+        if pattern == "static-noise":
+            return self._audio_static_noise(ns)
+        if pattern == "pink-noise":
+            return self._audio_pink_noise(ns)
+        if pattern == "grey-noise":
+            return self._audio_grey_noise(ns)
+        return self._audio_white_noise(ns)
+
+    def _audio_tone_on_off(self, t: np.ndarray) -> np.ndarray:
+        """Alternating on/off tone burst pattern."""
+        freq_hz = 440.0
+        phase = (2.0 * math.pi * freq_hz * t) + float(self._audio_phase)
+        tone = np.sin(phase)
+        gate = 0.5 * (1.0 + np.sign(np.sin(2.0 * math.pi * 1.5 * t + self._audio_vol_lfo_phase)))
+        mono = (0.30 * tone * gate).astype(np.float32)
+        self._audio_phase = float((phase[-1] + (2.0 * math.pi * freq_hz / self._audio_sample_rate_hz)) % (2.0 * math.pi))
+        self._audio_vol_lfo_phase = float((2.0 * math.pi * 1.5 * t[-1] + self._audio_vol_lfo_phase) % (2.0 * math.pi))
+        return np.stack([mono, mono], axis=1)
+
+    def _audio_pan_lr(self, t: np.ndarray) -> np.ndarray:
+        """Constant tone panning from left to right and back."""
+        freq_hz = 330.0
+        phase = (2.0 * math.pi * freq_hz * t) + float(self._audio_phase)
+        tone = np.sin(phase)
+        pan = 0.5 * (1.0 + np.sin(2.0 * math.pi * 0.35 * t + self._audio_pan_phase))
+        l = 0.30 * tone * np.sqrt(1.0 - pan)
+        r = 0.30 * tone * np.sqrt(pan)
+        self._audio_phase = float((phase[-1] + (2.0 * math.pi * freq_hz / self._audio_sample_rate_hz)) % (2.0 * math.pi))
+        self._audio_pan_phase = float((2.0 * math.pi * 0.35 * t[-1] + self._audio_pan_phase) % (2.0 * math.pi))
+        return np.stack([l.astype(np.float32), r.astype(np.float32)], axis=1)
+
+    def _audio_volume_sweep(self, t: np.ndarray) -> np.ndarray:
+        """Tone with low/high/low/high volume sweep."""
+        freq_hz = 220.0
+        phase = (2.0 * math.pi * freq_hz * t) + float(self._audio_phase)
+        tone = np.sin(phase)
+        amp = 0.20 + 0.18 * (0.5 + 0.5 * np.sin(2.0 * math.pi * 0.8 * t + self._audio_vol_lfo_phase))
+        mono = (amp * tone).astype(np.float32)
+        self._audio_phase = float((phase[-1] + (2.0 * math.pi * freq_hz / self._audio_sample_rate_hz)) % (2.0 * math.pi))
+        self._audio_vol_lfo_phase = float((2.0 * math.pi * 0.8 * t[-1] + self._audio_vol_lfo_phase) % (2.0 * math.pi))
+        return np.stack([mono, mono], axis=1)
+
+    def _audio_frequency_sweep(self, t: np.ndarray) -> np.ndarray:
+        """Tone with low/high/low/high frequency sweep."""
+        lfo = np.sin(2.0 * math.pi * 0.6 * t + self._audio_freq_lfo_phase)
+        freq = 200.0 + (1200.0 * (0.5 + 0.5 * lfo))
+        phase_inc = (2.0 * math.pi * freq / float(self._audio_sample_rate_hz)).astype(np.float32)
+        phase = np.cumsum(phase_inc, dtype=np.float32) + float(self._audio_phase)
+        mono = (0.20 * np.sin(phase)).astype(np.float32)
+        self._audio_phase = float(phase[-1] % (2.0 * math.pi))
+        self._audio_freq_lfo_phase = float((2.0 * math.pi * 0.6 * t[-1] + self._audio_freq_lfo_phase) % (2.0 * math.pi))
+        return np.stack([mono, mono], axis=1)
+
+    def _audio_static_noise(self, ns: int) -> np.ndarray:
+        """Sparse impulsive static noise."""
+        rng = np.random.default_rng(int(self._static_texture_seed) + int(self._scene_t * 1000.0) + 81_001)
+        spikes = (rng.random((ns, 2)) < 0.02).astype(np.float32)
+        vals = rng.uniform(-1.0, 1.0, size=(ns, 2)).astype(np.float32)
+        return 0.50 * spikes * vals
+
+    def _audio_white_noise(self, ns: int) -> np.ndarray:
+        """Flat spectrum white noise."""
+        rng = np.random.default_rng(int(self._static_texture_seed) + int(self._scene_t * 1000.0) + 81_002)
+        return rng.normal(0.0, 0.15, size=(ns, 2)).astype(np.float32)
+
+    def _audio_pink_noise(self, ns: int) -> np.ndarray:
+        """1/f pink noise approximation (Voss-McCartney style filter bank)."""
+        rng = np.random.default_rng(int(self._static_texture_seed) + int(self._scene_t * 1000.0) + 81_003)
+        white = rng.normal(0.0, 1.0, size=(ns,)).astype(np.float32)
+
+        b0, b1, b2, b3, b4, b5, b6 = [float(x) for x in self._pink_state]
+        out = np.empty(ns, dtype=np.float32)
+        for i in range(ns):
+            w = float(white[i])
+            b0 = 0.99886 * b0 + w * 0.0555179
+            b1 = 0.99332 * b1 + w * 0.0750759
+            b2 = 0.96900 * b2 + w * 0.1538520
+            b3 = 0.86650 * b3 + w * 0.3104856
+            b4 = 0.55000 * b4 + w * 0.5329522
+            b5 = -0.7616 * b5 - w * 0.0168980
+            out[i] = b0 + b1 + b2 + b3 + b4 + b5 + b6 + (w * 0.5362)
+            b6 = w * 0.115926
+        self._pink_state = np.array([b0, b1, b2, b3, b4, b5, b6], dtype=np.float32)
+        mono = (out * 0.045).astype(np.float32)
+        return np.stack([mono, mono], axis=1)
+
+    def _audio_grey_noise(self, ns: int) -> np.ndarray:
+        """Simple grey-noise-like tilt by high-passing white noise."""
+        white = self._audio_white_noise(ns)
+        prev = np.vstack([np.zeros((1, 2), dtype=np.float32), white[:-1, :]])
+        grey = white - (0.985 * prev)
+        return (0.35 * grey).astype(np.float32)
 
     # ---------------- scenes 1–18 (kept, scene 1 improved) ----------------
 

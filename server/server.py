@@ -38,7 +38,7 @@ def _parse_bool(value: Any) -> bool | None:
     return None
 
 
-def create_app(store: StatusStore, on_settings_changed=None) -> FastAPI:
+def create_app(store: StatusStore, on_settings_changed=None, quality_clips_dir: str = "./assets/quality_clips") -> FastAPI:
     """
     Build the FastAPI application.
 
@@ -59,6 +59,9 @@ def create_app(store: StatusStore, on_settings_changed=None) -> FastAPI:
     # - /server/assets is kept for backward compatibility with older index.html builds.
     app.mount("/assets", StaticFiles(directory=str(_ASSETS_DIR)), name="assets")
     app.mount("/server/assets", StaticFiles(directory=str(_ASSETS_DIR)), name="server-assets")
+    clips_dir = Path(quality_clips_dir)
+    clips_dir.mkdir(parents=True, exist_ok=True)
+    app.mount("/clips", StaticFiles(directory=str(clips_dir)), name="clips")
 
     @app.get("/", response_class=HTMLResponse)
     async def index() -> HTMLResponse:
@@ -187,6 +190,30 @@ def create_app(store: StatusStore, on_settings_changed=None) -> FastAPI:
         """
         return JSONResponse(store.get_ui_settings())
 
+    @app.get("/quality/events")
+    async def quality_events() -> JSONResponse:
+        """Return logged video-quality events."""
+        getter = getattr(store, "get_quality_events", None)
+        events = getter() if callable(getter) else []
+        return JSONResponse({"events": events})
+
+    @app.get("/quality/clips")
+    async def quality_clips() -> JSONResponse:
+        """List discovered quality clips."""
+        clips: list[dict[str, str | int]] = []
+        clips_dir = Path(quality_clips_dir)
+        if clips_dir.exists():
+            for p in sorted(clips_dir.glob("*.mp4"), key=lambda x: x.stat().st_mtime, reverse=True):
+                try:
+                    clips.append({
+                        "filename": p.name,
+                        "url": f"/clips/{p.name}",
+                        "size_bytes": int(p.stat().st_size),
+                    })
+                except OSError:
+                    continue
+        return JSONResponse({"clips": clips})
+
     @app.put("/tiles")
     async def put_tiles(body: dict[str, Any] = Body(...)) -> JSONResponse:
         """
@@ -209,7 +236,7 @@ def create_app(store: StatusStore, on_settings_changed=None) -> FastAPI:
     return app
 
 
-def run_server_in_thread(*, host: str, port: int, store: StatusStore, on_settings_changed=None) -> threading.Thread:
+def run_server_in_thread(*, host: str, port: int, store: StatusStore, quality_clips_dir: str = "./assets/quality_clips", on_settings_changed=None) -> threading.Thread:
     """
     Run the FastAPI server in a background thread.
 
@@ -222,7 +249,7 @@ def run_server_in_thread(*, host: str, port: int, store: StatusStore, on_setting
     - The returned thread is daemonized; application shutdown should be coordinated via
       StatusStore.quit_requested (or similar) in the main thread.
     """
-    app = create_app(store, on_settings_changed=on_settings_changed)
+    app = create_app(store, on_settings_changed=on_settings_changed, quality_clips_dir=quality_clips_dir)
 
     def _run() -> None:
         """Execute the main loop for this component until shutdown is requested."""

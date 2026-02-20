@@ -28,7 +28,9 @@ Output JSON (relevant-only)
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 import threading
+from pathlib import Path
 import time
 from collections import deque
 from typing import Callable, Deque, Dict, List, Optional, Tuple, Set
@@ -73,6 +75,22 @@ class DetectionParams:
     blockiness_sample_every_frames: int
     blockiness_downscale_width: int
     blockiness_ema_alpha: float
+
+    quality_enabled: bool
+    quality_sample_every_frames: int
+    quality_downscale_width: int
+    quality_threshold_ringing: float
+    quality_threshold_banding: float
+    quality_threshold_cadence_jitter: float
+    quality_threshold_duplicate_ratio: float
+    quality_threshold_motion_blur: float
+    quality_trigger_consecutive_samples: int
+    quality_trigger_cooldown_seconds: float
+    quality_recording_enabled: bool
+    quality_pre_roll_seconds: float
+    quality_post_roll_seconds: float
+    quality_max_clip_seconds: float
+    quality_recording_cooldown_seconds: float
 
     record_enabled: bool
     record_trigger_state: str
@@ -297,6 +315,57 @@ def _blockiness_score_for_size(gray: np.ndarray, block_size: int, eps: float = 1
     score = bound / (interior + float(eps))
     return float(max(0.0, score))
 
+def _clip01(x: float) -> float:
+    """Clamp float to [0,1]."""
+    return 0.0 if x < 0.0 else 1.0 if x > 1.0 else float(x)
+
+
+def _quality_metrics(gray: np.ndarray, prev_gray: Optional[np.ndarray], *, dt: float, target_period: float) -> Dict[str, float]:
+    """Compute normalized quality metrics (0..1) from grayscale frames."""
+    g = gray.astype(np.uint8)
+    gx = cv2.Sobel(g, cv2.CV_32F, 1, 0, ksize=3)
+    gy = cv2.Sobel(g, cv2.CV_32F, 0, 1, ksize=3)
+    grad = cv2.magnitude(gx, gy)
+
+    edge_mask = (grad > 32.0).astype(np.uint8)
+    edge_near = cv2.dilate(edge_mask, np.ones((3, 3), np.uint8), iterations=1)
+    lap = np.abs(cv2.Laplacian(g, cv2.CV_32F, ksize=3))
+
+    near_vals = lap[edge_near > 0]
+    far_vals = lap[edge_near == 0]
+    near_mean = float(near_vals.mean()) if near_vals.size else 0.0
+    far_mean = float(far_vals.mean()) if far_vals.size else 0.0
+    ringing = _clip01((near_mean - (1.1 * far_mean)) / 24.0)
+
+    smooth_mask = grad < 6.0
+    smooth_vals = g[smooth_mask]
+    if smooth_vals.size < 64:
+        banding = 0.0
+    else:
+        unique_count = int(np.unique(smooth_vals).size)
+        banding = _clip01(1.0 - (float(unique_count) / 96.0))
+
+    cadence_jitter = _clip01(abs(float(dt) - float(target_period)) / max(1e-6, float(target_period)))
+
+    if prev_gray is None or prev_gray.shape != g.shape:
+        duplicate_ratio = 0.0
+        motion_blur = 0.0
+    else:
+        diff_mean = float(np.mean(np.abs(g.astype(np.int16) - prev_gray.astype(np.int16))))
+        duplicate_ratio = _clip01(1.0 - (diff_mean / 2.5))
+        lap_var = float(cv2.Laplacian(g, cv2.CV_32F, ksize=3).var())
+        motion_strength = _clip01(diff_mean / 18.0)
+        blur_raw = 1.0 - _clip01(lap_var / 220.0)
+        motion_blur = _clip01(motion_strength * blur_raw)
+
+    return {
+        "ringing": float(ringing),
+        "banding": float(banding),
+        "cadence_jitter": float(cadence_jitter),
+        "duplicate_ratio": float(duplicate_ratio),
+        "motion_blur": float(motion_blur),
+    }
+
 def _confidence_from_thresholds(*, ema_activity: float, no_thr: float, low_thr: float) -> float:
     """
     A simple, monotonic confidence estimate in [0..1] based on distance from thresholds.
@@ -369,6 +438,35 @@ class MonitorLoop:
         self._blockiness_score: Optional[float] = None
         self._blockiness_score_ema: Optional[float] = None
         self._blockiness_score_by_block: Dict[str, Optional[float]] = {str(b): None for b in self._blockiness_block_sizes}
+
+        self._quality_metrics_current: Dict[str, float] = {
+            "ringing": 0.0,
+            "banding": 0.0,
+            "cadence_jitter": 0.0,
+            "duplicate_ratio": 0.0,
+            "motion_blur": 0.0,
+        }
+        self._quality_frame_index: int = 0
+        self._quality_last_sample_ts: float = 0.0
+        self._quality_thresholds: Dict[str, float] = {
+            "ringing": float(getattr(self._params, "quality_threshold_ringing", 0.65)),
+            "banding": float(getattr(self._params, "quality_threshold_banding", 0.65)),
+            "cadence_jitter": float(getattr(self._params, "quality_threshold_cadence_jitter", 0.65)),
+            "duplicate_ratio": float(getattr(self._params, "quality_threshold_duplicate_ratio", 0.65)),
+            "motion_blur": float(getattr(self._params, "quality_threshold_motion_blur", 0.65)),
+        }
+        self._quality_consecutive: Dict[str, int] = {k: 0 for k in self._quality_thresholds}
+        self._quality_problem_active: Dict[str, Optional[Dict[str, float | str | None]]] = {k: None for k in self._quality_thresholds}
+
+        self._quality_assets_dir = Path(str(getattr(self._params, "record_assets_dir", "./assets"))) / "quality_clips"
+        self._quality_assets_dir.mkdir(parents=True, exist_ok=True)
+        self._quality_frame_buffer: Deque[Tuple[float, np.ndarray]] = deque()
+        self._quality_last_trigger_ts: float = 0.0
+        self._quality_clip_writer: Optional[cv2.VideoWriter] = None
+        self._quality_clip_filename: Optional[str] = None
+        self._quality_clip_start_ts: float = 0.0
+        self._quality_clip_end_after_ts: Optional[float] = None
+        self._quality_clip_event_types: set[str] = set()
 
         self._recorder = ClipRecorder(
             RecorderConfig(
@@ -453,6 +551,10 @@ class MonitorLoop:
                 pass
             try:
                 self._audio.stop()
+            except Exception:
+                pass
+            try:
+                self._quality_close_clip()
             except Exception:
                 pass
 
@@ -544,6 +646,185 @@ class MonitorLoop:
             "downscale_width": int(getattr(self._params, "blockiness_downscale_width", 640)),
         }
 
+    def _quality_payload(self) -> Dict[str, object]:
+        """Build quality object for status JSON."""
+        problems = [k for k, v in self._quality_problem_active.items() if isinstance(v, dict)]
+        return {
+            "enabled": bool(getattr(self._params, "quality_enabled", True)),
+            "sample_every_frames": int(getattr(self._params, "quality_sample_every_frames", 3)),
+            "thresholds": dict(self._quality_thresholds),
+            "ringing": float(self._quality_metrics_current.get("ringing", 0.0)),
+            "banding": float(self._quality_metrics_current.get("banding", 0.0)),
+            "cadence_jitter": float(self._quality_metrics_current.get("cadence_jitter", 0.0)),
+            "duplicate_ratio": float(self._quality_metrics_current.get("duplicate_ratio", 0.0)),
+            "motion_blur": float(self._quality_metrics_current.get("motion_blur", 0.0)),
+            "active_problems": sorted(problems),
+        }
+
+    def _quality_append_buffer(self, ts: float, frame_bgr: np.ndarray) -> None:
+        """Append frame to rolling pre-roll buffer."""
+        self._quality_frame_buffer.append((float(ts), frame_bgr.copy()))
+        keep = max(0.0, float(getattr(self._params, "quality_pre_roll_seconds", 2.0)))
+        cutoff = float(ts) - keep
+        while self._quality_frame_buffer and self._quality_frame_buffer[0][0] < cutoff:
+            self._quality_frame_buffer.popleft()
+
+    def _quality_open_clip_writer(self, frame_bgr: np.ndarray) -> Optional[cv2.VideoWriter]:
+        """Open video writer for quality clip."""
+        h, w = frame_bgr.shape[:2]
+        ts_name = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"quality_{ts_name}.mp4"
+        path = self._quality_assets_dir / filename
+        writer = cv2.VideoWriter(
+            str(path),
+            cv2.VideoWriter_fourcc(*"mp4v"),
+            float(max(1.0, float(self._params.fps))),
+            (int(w), int(h)),
+        )
+        if not writer.isOpened():
+            writer.release()
+            return None
+        self._quality_clip_filename = filename
+        return writer
+
+    def _quality_start_clip(self, ts: float, frame_bgr: np.ndarray, metric_name: str) -> None:
+        """Start clip and write pre-roll frames."""
+        if not bool(getattr(self._params, "quality_recording_enabled", True)):
+            return
+        cooldown = max(0.0, float(getattr(self._params, "quality_recording_cooldown_seconds", 20.0)))
+        if cooldown > 0 and (float(ts) - float(self._quality_last_trigger_ts)) < cooldown and self._quality_clip_writer is None:
+            return
+
+        if self._quality_clip_writer is None:
+            writer = self._quality_open_clip_writer(frame_bgr)
+            if writer is None:
+                return
+            self._quality_clip_writer = writer
+            pre_cutoff = float(ts) - max(0.0, float(getattr(self._params, "quality_pre_roll_seconds", 2.0)))
+            for frame_ts, frame_prev in self._quality_frame_buffer:
+                if frame_ts >= pre_cutoff:
+                    self._quality_clip_writer.write(frame_prev)
+            self._quality_clip_start_ts = float(ts)
+            self._quality_clip_end_after_ts = None
+            self._quality_clip_event_types = set()
+
+        self._quality_last_trigger_ts = float(ts)
+        self._quality_clip_event_types.add(str(metric_name))
+
+    def _quality_finalize_event(self, metric_name: str, end_ts: float) -> None:
+        """Finalize active quality event and emit to store."""
+        active = self._quality_problem_active.get(metric_name)
+        if not isinstance(active, dict):
+            return
+        start_ts = float(active.get("start_ts", end_ts))
+        peak = float(active.get("peak", 0.0))
+        threshold = float(active.get("threshold", self._quality_thresholds.get(metric_name, 0.0)))
+        clip_filename = self._quality_clip_filename if self._quality_clip_filename and metric_name in self._quality_clip_event_types else None
+        event = {
+            "type": str(metric_name),
+            "start_ts": start_ts,
+            "end_ts": float(end_ts),
+            "peak": peak,
+            "threshold": threshold,
+            "clip": clip_filename,
+        }
+        add_event = getattr(self._store, "add_quality_event", None)
+        if callable(add_event):
+            try:
+                add_event(event)
+            except Exception:
+                pass
+        self._quality_problem_active[metric_name] = None
+
+    def _quality_update_clip_lifecycle(self, ts: float, frame_bgr: np.ndarray) -> None:
+        """Write active clip frames and close by post-roll/max duration."""
+        if self._quality_clip_writer is None:
+            return
+
+        self._quality_clip_writer.write(frame_bgr)
+
+        max_len = max(1.0, float(getattr(self._params, "quality_max_clip_seconds", 20.0)))
+        if (float(ts) - float(self._quality_clip_start_ts)) >= max_len:
+            self._quality_close_clip()
+            return
+
+        if any(isinstance(v, dict) for v in self._quality_problem_active.values()):
+            self._quality_clip_end_after_ts = None
+            return
+
+        if self._quality_clip_end_after_ts is None:
+            self._quality_clip_end_after_ts = float(ts) + max(0.0, float(getattr(self._params, "quality_post_roll_seconds", 2.0)))
+        if float(ts) >= float(self._quality_clip_end_after_ts):
+            self._quality_close_clip()
+
+    def _quality_close_clip(self) -> None:
+        """Close quality clip writer and clear state."""
+        if self._quality_clip_writer is not None:
+            try:
+                self._quality_clip_writer.release()
+            except Exception:
+                pass
+        self._quality_clip_writer = None
+        self._quality_clip_filename = None
+        self._quality_clip_start_ts = 0.0
+        self._quality_clip_end_after_ts = None
+        self._quality_clip_event_types = set()
+
+    def _maybe_update_quality(self, gray: np.ndarray, prev_gray: Optional[np.ndarray], ts: float, frame_bgr: np.ndarray) -> None:
+        """Sample and evaluate quality metrics, update triggers, and manage clip recording."""
+        if not bool(getattr(self._params, "quality_enabled", True)):
+            return
+
+        self._quality_append_buffer(ts, frame_bgr)
+        self._quality_update_clip_lifecycle(ts, frame_bgr)
+
+        self._quality_frame_index += 1
+        every = max(1, int(getattr(self._params, "quality_sample_every_frames", 3)))
+        if (self._quality_frame_index % every) != 0:
+            return
+
+        dt = max(1e-6, float(ts) - float(self._quality_last_sample_ts)) if self._quality_last_sample_ts > 0 else (1.0 / max(float(self._params.fps), 1.0))
+        self._quality_last_sample_ts = float(ts)
+
+        scaled = _downscale_gray(gray, int(getattr(self._params, "quality_downscale_width", 640)))
+        prev_scaled = _downscale_gray(prev_gray, int(getattr(self._params, "quality_downscale_width", 640))) if isinstance(prev_gray, np.ndarray) else None
+        metrics = _quality_metrics(
+            scaled,
+            prev_scaled,
+            dt=dt,
+            target_period=(1.0 / max(float(self._params.fps), 1.0)),
+        )
+        self._quality_metrics_current = metrics
+
+        needed = max(1, int(getattr(self._params, "quality_trigger_consecutive_samples", 3)))
+        cooldown = max(0.0, float(getattr(self._params, "quality_trigger_cooldown_seconds", 20.0)))
+
+        for metric_name, threshold in self._quality_thresholds.items():
+            value = float(metrics.get(metric_name, 0.0))
+            is_exceed = value >= float(threshold)
+            if is_exceed:
+                self._quality_consecutive[metric_name] += 1
+            else:
+                self._quality_consecutive[metric_name] = 0
+
+            active = self._quality_problem_active.get(metric_name)
+            if isinstance(active, dict):
+                active["peak"] = max(float(active.get("peak", 0.0)), value)
+                if not is_exceed:
+                    self._quality_finalize_event(metric_name, end_ts=float(ts))
+                else:
+                    self._quality_problem_active[metric_name] = active
+                continue
+
+            if is_exceed and self._quality_consecutive[metric_name] >= needed:
+                if cooldown <= 0.0 or (float(ts) - float(self._quality_last_trigger_ts)) >= cooldown:
+                    self._quality_problem_active[metric_name] = {
+                        "start_ts": float(ts),
+                        "peak": value,
+                        "threshold": float(threshold),
+                    }
+                    self._quality_start_clip(ts, frame_bgr, metric_name)
+
     def _process_frame(self, *, frame: np.ndarray, ts: float, region: Region) -> Dict:
         """Process frame for this module's workflow."""
         gray_full = _to_gray_u8(frame)
@@ -554,6 +835,11 @@ class MonitorLoop:
 
         gray, _inset_rect = _apply_inset(gray_full, int(getattr(self._params, "analysis_inset_px", 10)))
         self._maybe_update_blockiness(gray)
+
+        prev_gray_for_quality = self._prev_gray
+        frame_bgr = _bgra_to_bgr(frame)
+        if isinstance(frame_bgr, np.ndarray):
+            self._maybe_update_quality(gray, prev_gray_for_quality, ts, frame_bgr)
 
         disabled_tiles = self._get_disabled_tiles(n_tiles=n_tiles)
         disabled_set: Set[int] = set(disabled_tiles)
@@ -589,6 +875,7 @@ class MonitorLoop:
                 stale_age_sec=0.0,
                 audio=audio,
                 blockiness=self._blockiness_payload(),
+                quality=self._quality_payload(),
             )
 
         diff = np.abs(gray.astype(np.int16) - self._prev_gray.astype(np.int16)).astype(np.uint8)
@@ -699,10 +986,10 @@ class MonitorLoop:
             stale_age_sec=0.0,
             audio=audio,
             blockiness=self._blockiness_payload(),
+            quality=self._quality_payload(),
         )
 
-        if not all_tiles_disabled:
-            frame_bgr = _bgra_to_bgr(frame)
+        if not all_tiles_disabled and isinstance(frame_bgr, np.ndarray):
             try:
                 self._recorder.update(now_ts=ts, state=video_state, frame_bgr=frame_bgr)
             except Exception as e:
@@ -737,6 +1024,7 @@ class MonitorLoop:
         stale_age_sec: float,
         audio,
         blockiness: Optional[Dict[str, object]] = None,
+        quality: Optional[Dict[str, object]] = None,
     ) -> Dict:
         tiles_list: List[Optional[float]] = [float(x) if x is not None else None for x in tiles]
         tiles_indexed = [
@@ -769,6 +1057,23 @@ class MonitorLoop:
                     "score_by_block": {"8": None, "16": None},
                     "sample_every_frames": 25,
                     "downscale_width": 640,
+                },
+                "quality": dict(quality) if isinstance(quality, dict) else {
+                    "enabled": False,
+                    "sample_every_frames": 3,
+                    "thresholds": {
+                        "ringing": 0.65,
+                        "banding": 0.65,
+                        "cadence_jitter": 0.65,
+                        "duplicate_ratio": 0.65,
+                        "motion_blur": 0.65,
+                    },
+                    "ringing": 0.0,
+                    "banding": 0.0,
+                    "cadence_jitter": 0.0,
+                    "duplicate_ratio": 0.0,
+                    "motion_blur": 0.0,
+                    "active_problems": [],
                 },
             },
             "audio": {
@@ -816,6 +1121,23 @@ class MonitorLoop:
                     "score_by_block": {"8": None, "16": None},
                     "sample_every_frames": 25,
                     "downscale_width": 640,
+                },
+                "quality": {
+                    "enabled": False,
+                    "sample_every_frames": 3,
+                    "thresholds": {
+                        "ringing": 0.65,
+                        "banding": 0.65,
+                        "cadence_jitter": 0.65,
+                        "duplicate_ratio": 0.65,
+                        "motion_blur": 0.65,
+                    },
+                    "ringing": 0.0,
+                    "banding": 0.0,
+                    "cadence_jitter": 0.0,
+                    "duplicate_ratio": 0.0,
+                    "motion_blur": 0.0,
+                    "active_problems": [],
                 },
             },
             "audio": {

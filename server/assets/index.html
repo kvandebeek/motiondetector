@@ -108,7 +108,7 @@
     </section>
 
     <section class="panel panel-motion">
-      <h2><span>Motion mean + peak (last {{HISTORY_SECONDS}}s)</span></h2>
+      <h2><span>Motion metrics (last {{HISTORY_SECONDS}}s)</span></h2>
       <div class="chartwrap">
         <canvas id="chart" width="900" height="300"></canvas>
       </div>
@@ -119,6 +119,28 @@
       <h2><span>Blockiness (last {{HISTORY_SECONDS}}s, higher = worse)</span></h2>
       <div class="chartwrap">
         <canvas id="blockinessChart" width="900" height="300"></canvas>
+      </div>
+    </section>
+
+    <section class="panel panel-quality">
+      <h2><span>Video Quality metrics (last {{HISTORY_SECONDS}}s)</span></h2>
+      <div class="chartwrap">
+        <canvas id="qualityChart" width="900" height="300"></canvas>
+      </div>
+      <div class="subtle" style="margin-top:8px;">ringing, banding, cadence_jitter, duplicate_ratio, motion_blur (+ blockiness EMA)</div>
+    </section>
+
+    <section class="panel panel-quality-events">
+      <h2><span>Quality events + clips</span></h2>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div>
+          <div class="subtle" style="margin-bottom:6px;">Recent events</div>
+          <ul id="qualityEvents" class="simple-list"></ul>
+        </div>
+        <div>
+          <div class="subtle" style="margin-bottom:6px;">Recent clips</div>
+          <ul id="qualityClips" class="simple-list"></ul>
+        </div>
       </div>
     </section>
 

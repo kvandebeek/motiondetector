@@ -17,6 +17,8 @@ export const STATE_OVERLAY_URL = '/ui/state-overlay';
 // Intentionally separate constants even if the paths match, so call sites remain explicit.
 export const TILES_GET_URL = '/tiles';
 export const TILES_PUT_URL = '/tiles';
+export const QUALITY_EVENTS_URL = '/quality/events';
+export const QUALITY_CLIPS_URL = '/quality/clips';
 
 /**
  * Fetch JSON with caching disabled.

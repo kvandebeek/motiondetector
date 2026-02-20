@@ -10,12 +10,14 @@ import {
   STATE_OVERLAY_URL,
   TILES_GET_URL,
   TILES_PUT_URL,
+  QUALITY_EVENTS_URL,
+  QUALITY_CLIPS_URL,
   fetchJson,
   postJson,
   putJson,
 } from './api.js';
 import { fmtTime } from './utils.js';
-import { drawAudioChart, drawBlockinessChart, drawChart } from './chart.js';
+import { drawAudioChart, drawBlockinessChart, drawChart, drawQualityChart } from './chart.js';
 import { drawTilesHeatmap, getGridAndTiles, tileIndexFromCanvasClick } from './heatmap.js';
 
 const jsonBox = document.getElementById('jsonBox');
@@ -54,8 +56,11 @@ const regionHPlusBtn = document.getElementById('regionHPlus');
 
 const chartCanvas = document.getElementById('chart');
 const blockinessChartCanvas = document.getElementById('blockinessChart');
+const qualityChartCanvas = document.getElementById('qualityChart');
 const audioChartCanvas = document.getElementById('audioChart');
 const heatCanvas = document.getElementById('tilesHeatmap');
+const qualityEventsList = document.getElementById('qualityEvents');
+const qualityClipsList = document.getElementById('qualityClips');
 
 let disabledTiles = new Set();
 let suppressToggleHandler = false;
@@ -214,6 +219,29 @@ function renderStatus(payload) {
   applyUiValues(payload?.ui, { initOnly: true });
 }
 
+
+function renderQualityLists(eventsPayload, clipsPayload) {
+  if (qualityEventsList) {
+    const events = Array.isArray(eventsPayload?.events) ? eventsPayload.events : [];
+    qualityEventsList.innerHTML = events.slice(-8).reverse().map((e) => {
+      const t = String(e?.type || 'unknown');
+      const peak = Number(e?.peak || 0).toFixed(3);
+      const thr = Number(e?.threshold || 0).toFixed(3);
+      const clip = typeof e?.clip === 'string' && e.clip ? `<a href="/clips/${e.clip}" target="_blank" rel="noreferrer">clip</a>` : 'no clip';
+      return `<li><strong>${t}</strong> peak=${peak} thr=${thr} ${clip}</li>`;
+    }).join('') || '<li class="subtle">No quality events yet.</li>';
+  }
+
+  if (qualityClipsList) {
+    const clips = Array.isArray(clipsPayload?.clips) ? clipsPayload.clips : [];
+    qualityClipsList.innerHTML = clips.slice(0, 8).map((c) => {
+      const filename = String(c?.filename || 'clip.mp4');
+      const size = Number(c?.size_bytes || 0);
+      return `<li><a href="${c?.url || ('/clips/' + filename)}" target="_blank" rel="noreferrer">${filename}</a> <span class="subtle">(${size} bytes)</span></li>`;
+    }).join('') || '<li class="subtle">No clips found.</li>';
+  }
+}
+
 async function loadTileMask() {
   try {
     const d = await fetchJson(TILES_GET_URL);
@@ -309,11 +337,24 @@ async function tick() {
     const hist = await fetchJson(HISTORY_URL);
     drawChart(chartCanvas, hist.history || []);
     drawBlockinessChart(blockinessChartCanvas, hist.history || []);
+    drawQualityChart(qualityChartCanvas, hist.history || []);
     drawAudioChart(audioChartCanvas, hist.history || []);
   } catch {
     drawChart(chartCanvas, []);
     drawBlockinessChart(blockinessChartCanvas, []);
+    drawQualityChart(qualityChartCanvas, []);
     drawAudioChart(audioChartCanvas, []);
+  }
+
+
+  try {
+    const [eventsPayload, clipsPayload] = await Promise.all([
+      fetchJson(QUALITY_EVENTS_URL),
+      fetchJson(QUALITY_CLIPS_URL),
+    ]);
+    renderQualityLists(eventsPayload, clipsPayload);
+  } catch {
+    renderQualityLists({ events: [] }, { clips: [] });
   }
 
   if (!status) {

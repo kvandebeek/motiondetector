@@ -100,6 +100,25 @@ class AppConfig:
     blockiness_ema_alpha: float
 
     # -----------------------------
+    # Video quality metrics settings
+    # -----------------------------
+    quality_enabled: bool
+    quality_sample_every_frames: int
+    quality_downscale_width: int
+    quality_threshold_ringing: float
+    quality_threshold_banding: float
+    quality_threshold_cadence_jitter: float
+    quality_threshold_duplicate_ratio: float
+    quality_threshold_motion_blur: float
+    quality_trigger_consecutive_samples: int
+    quality_trigger_cooldown_seconds: float
+    quality_recording_enabled: bool
+    quality_pre_roll_seconds: float
+    quality_post_roll_seconds: float
+    quality_max_clip_seconds: float
+    quality_recording_cooldown_seconds: float
+
+    # -----------------------------
     # Recording settings
     # -----------------------------
     recording_enabled: bool
@@ -271,7 +290,7 @@ def load_config(path: str) -> AppConfig:
     # UI.initial_region is required and must be a dict.
     initial_region_obj = _require_obj(ui, "initial_region")
 
-    # Optional sections: recording + audio + blockiness.
+    # Optional sections: recording + audio + blockiness + quality.
     recording = raw.get("recording")
     if recording is None:
         recording_obj: Dict[str, Any] = {}
@@ -295,6 +314,30 @@ def load_config(path: str) -> AppConfig:
         blockiness_obj = blockiness
     else:
         raise ValueError("Missing or invalid 'blockiness' object in config (expected object)")
+
+    quality = raw.get("quality")
+    if quality is None:
+        quality_obj: Dict[str, Any] = {}
+    elif isinstance(quality, dict):
+        quality_obj = quality
+    else:
+        raise ValueError("Missing or invalid 'quality' object in config (expected object)")
+
+    quality_thresholds_raw = quality_obj.get("thresholds")
+    if quality_thresholds_raw is None:
+        quality_thresholds_obj: Dict[str, Any] = {}
+    elif isinstance(quality_thresholds_raw, dict):
+        quality_thresholds_obj = quality_thresholds_raw
+    else:
+        raise ValueError("Missing or invalid 'quality.thresholds' object in config (expected object)")
+
+    quality_recording_raw = quality_obj.get("recording")
+    if quality_recording_raw is None:
+        quality_recording_obj: Dict[str, Any] = {}
+    elif isinstance(quality_recording_raw, dict):
+        quality_recording_obj = quality_recording_raw
+    else:
+        raise ValueError("Missing or invalid 'quality.recording' object in config (expected object)")
 
     # ---- Server ----
     server_host = _require_str(server.get("host"), "server.host")
@@ -366,6 +409,69 @@ def load_config(path: str) -> AppConfig:
         raise ValueError("blockiness.downscale_width must be > 0")
     if not (0.0 <= blockiness_ema_alpha <= 1.0):
         raise ValueError("blockiness.ema_alpha must be in [0, 1]")
+
+    # ---- Quality ----
+    quality_enabled = _opt_bool(quality_obj.get("enabled"), "quality.enabled", True)
+    quality_sample_every_frames = _opt_int(
+        quality_obj.get("sample_every_frames"),
+        "quality.sample_every_frames",
+        3,
+    )
+    quality_downscale_width = _opt_int(
+        quality_obj.get("downscale_width"),
+        "quality.downscale_width",
+        640,
+    )
+    quality_threshold_ringing = _opt_num(quality_thresholds_obj.get("ringing"), "quality.thresholds.ringing", 0.65)
+    quality_threshold_banding = _opt_num(quality_thresholds_obj.get("banding"), "quality.thresholds.banding", 0.65)
+    quality_threshold_cadence_jitter = _opt_num(quality_thresholds_obj.get("cadence_jitter"), "quality.thresholds.cadence_jitter", 0.65)
+    quality_threshold_duplicate_ratio = _opt_num(quality_thresholds_obj.get("duplicate_ratio"), "quality.thresholds.duplicate_ratio", 0.65)
+    quality_threshold_motion_blur = _opt_num(quality_thresholds_obj.get("motion_blur"), "quality.thresholds.motion_blur", 0.65)
+    quality_trigger_consecutive_samples = _opt_int(
+        quality_obj.get("trigger_consecutive_samples"),
+        "quality.trigger_consecutive_samples",
+        3,
+    )
+    quality_trigger_cooldown_seconds = _opt_num(
+        quality_obj.get("trigger_cooldown_seconds"),
+        "quality.trigger_cooldown_seconds",
+        20.0,
+    )
+
+    quality_recording_enabled = _opt_bool(quality_recording_obj.get("enabled"), "quality.recording.enabled", True)
+    quality_pre_roll_seconds = _opt_num(quality_recording_obj.get("pre_roll_seconds"), "quality.recording.pre_roll_seconds", 2.0)
+    quality_post_roll_seconds = _opt_num(quality_recording_obj.get("post_roll_seconds"), "quality.recording.post_roll_seconds", 2.0)
+    quality_max_clip_seconds = _opt_num(quality_recording_obj.get("max_clip_seconds"), "quality.recording.max_clip_seconds", 20.0)
+    quality_recording_cooldown_seconds = _opt_num(
+        quality_recording_obj.get("cooldown_seconds"),
+        "quality.recording.cooldown_seconds",
+        20.0,
+    )
+
+    if quality_sample_every_frames <= 0:
+        raise ValueError("quality.sample_every_frames must be > 0")
+    if quality_downscale_width <= 0:
+        raise ValueError("quality.downscale_width must be > 0")
+    if quality_trigger_consecutive_samples <= 0:
+        raise ValueError("quality.trigger_consecutive_samples must be > 0")
+    if quality_trigger_cooldown_seconds < 0:
+        raise ValueError("quality.trigger_cooldown_seconds must be >= 0")
+    if quality_pre_roll_seconds < 0 or quality_post_roll_seconds < 0:
+        raise ValueError("quality.recording pre/post-roll must be >= 0")
+    if quality_max_clip_seconds <= 0:
+        raise ValueError("quality.recording.max_clip_seconds must be > 0")
+    if quality_recording_cooldown_seconds < 0:
+        raise ValueError("quality.recording.cooldown_seconds must be >= 0")
+
+    for key, value in [
+        ("ringing", quality_threshold_ringing),
+        ("banding", quality_threshold_banding),
+        ("cadence_jitter", quality_threshold_cadence_jitter),
+        ("duplicate_ratio", quality_threshold_duplicate_ratio),
+        ("motion_blur", quality_threshold_motion_blur),
+    ]:
+        if value < 0.0 or value > 1.0:
+            raise ValueError(f"quality.thresholds.{key} must be in [0, 1]")
 
     # ---- Recording ----
     # Defaults make recording enabled unless explicitly disabled.
@@ -485,6 +591,21 @@ def load_config(path: str) -> AppConfig:
         blockiness_sample_every_frames=blockiness_sample_every_frames,
         blockiness_downscale_width=blockiness_downscale_width,
         blockiness_ema_alpha=blockiness_ema_alpha,
+        quality_enabled=quality_enabled,
+        quality_sample_every_frames=quality_sample_every_frames,
+        quality_downscale_width=quality_downscale_width,
+        quality_threshold_ringing=quality_threshold_ringing,
+        quality_threshold_banding=quality_threshold_banding,
+        quality_threshold_cadence_jitter=quality_threshold_cadence_jitter,
+        quality_threshold_duplicate_ratio=quality_threshold_duplicate_ratio,
+        quality_threshold_motion_blur=quality_threshold_motion_blur,
+        quality_trigger_consecutive_samples=quality_trigger_consecutive_samples,
+        quality_trigger_cooldown_seconds=quality_trigger_cooldown_seconds,
+        quality_recording_enabled=quality_recording_enabled,
+        quality_pre_roll_seconds=quality_pre_roll_seconds,
+        quality_post_roll_seconds=quality_post_roll_seconds,
+        quality_max_clip_seconds=quality_max_clip_seconds,
+        quality_recording_cooldown_seconds=quality_recording_cooldown_seconds,
         recording_enabled=recording_enabled,
         recording_trigger_state=recording_trigger_state,
         recording_clip_seconds=recording_clip_seconds,

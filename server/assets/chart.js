@@ -36,6 +36,76 @@ export function drawBlockinessChart(canvas, historyPayloads) {
   });
 }
 
+export function drawQualityChart(canvas, historyPayloads) {
+  const ctx = canvas?.getContext?.('2d');
+  if (!ctx) return;
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = 'rgba(0,0,0,0.15)';
+  ctx.fillRect(0, 0, w, h);
+
+  const pts = (historyPayloads || [])
+    .map((p) => ({
+      t: Number(p?.timestamp) || 0,
+      ringing: clamp01(Number(p?.video?.quality?.ringing) || 0),
+      banding: clamp01(Number(p?.video?.quality?.banding) || 0),
+      cadence_jitter: clamp01(Number(p?.video?.quality?.cadence_jitter) || 0),
+      duplicate_ratio: clamp01(Number(p?.video?.quality?.duplicate_ratio) || 0),
+      motion_blur: clamp01(Number(p?.video?.quality?.motion_blur) || 0),
+      blockiness: clamp01(Number(p?.video?.blockiness?.score_ema) || 0),
+    }))
+    .filter((p) => p.t > 0)
+    .sort((a, b) => a.t - b.t);
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  for (let i = 0; i <= 5; i++) {
+    const yy = (h - 20) - i * ((h - 40) / 5);
+    ctx.beginPath();
+    ctx.moveTo(40, yy);
+    ctx.lineTo(w - 10, yy);
+    ctx.stroke();
+  }
+
+  if (pts.length < 2) {
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.font = '16px system-ui';
+    ctx.fillText('Collecting quality history…', 16, 28);
+    return;
+  }
+
+  const tMin = pts[0].t;
+  const tMax = pts[pts.length - 1].t;
+  const tSpan = Math.max(1e-6, tMax - tMin);
+
+  const lines = [
+    ['ringing', 'rgba(255, 90, 90, 0.95)'],
+    ['banding', 'rgba(255, 170, 80, 0.95)'],
+    ['cadence_jitter', 'rgba(240, 240, 110, 0.95)'],
+    ['duplicate_ratio', 'rgba(90, 200, 255, 0.95)'],
+    ['motion_blur', 'rgba(150, 120, 255, 0.95)'],
+    ['blockiness', 'rgba(120, 255, 170, 0.95)'],
+  ];
+
+  for (const [key, color] of lines) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    for (let i = 0; i < pts.length; i++) {
+      const x = 40 + ((pts[i].t - tMin) / tSpan) * (w - 50);
+      const y = (h - 20) - pts[i][key] * (h - 40);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.font = '12px system-ui';
+  ctx.fillText('HIGH', 10, 20);
+  ctx.fillText('LOW', 10, h - 20);
+}
+
 export function drawAudioChart(canvas, historyPayloads) {
   drawSeriesChart({
     canvas,

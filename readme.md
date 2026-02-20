@@ -152,6 +152,11 @@ Current config structure (high-level):
   - `sample_every_frames` (default `25`)
   - `downscale_width` (default `640`)
   - `ema_alpha` (default `0.25`)
+- `quality.*` (optional, default enabled)
+  - metric sampling: `sample_every_frames` (default `3`) + `downscale_width` (default `640`)
+  - thresholds: `thresholds.ringing`, `thresholds.banding`, `thresholds.cadence_jitter`, `thresholds.duplicate_ratio`, `thresholds.motion_blur`
+  - trigger policy: `trigger_consecutive_samples`, `trigger_cooldown_seconds`
+  - clip policy: `recording.enabled`, `recording.pre_roll_seconds`, `recording.post_roll_seconds`, `recording.max_clip_seconds`, `recording.cooldown_seconds`
 - `audio.*` (optional loopback meter settings)
   - `enabled` (default `true`)
   - `backend` (`pycaw`/`wasapi_session` for WASAPI session metering, or `pyaudiowpatch` for loopback capture)

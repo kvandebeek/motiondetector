@@ -108,6 +108,9 @@ class StatusStore:
         # 0-based tile indices disabled via web UI clicks.
         self._disabled_tiles: list[int] = []
 
+        # Recent quality events emitted by the analyzer.
+        self._quality_events: Deque[JsonDict] = deque(maxlen=500)
+
     # ----------------------------
     # Status payload + history
     # ----------------------------
@@ -227,6 +230,7 @@ class StatusStore:
             "stale": bool(video.get("stale", False)),
             "stale_age_sec": float(video.get("stale_age_sec", 0.0)),
             "blockiness": self._normalize_blockiness(video.get("blockiness")),
+            "quality": self._normalize_quality(video.get("quality")),
         }
 
         # Copy original payload and replace sections with normalized versions.
@@ -442,6 +446,22 @@ class StatusStore:
             return list(self._disabled_tiles)
 
     # ----------------------------
+    # Quality events
+    # ----------------------------
+
+    def add_quality_event(self, event: JsonDict) -> None:
+        """Append one quality event record."""
+        if not isinstance(event, dict):
+            return
+        with self._lock:
+            self._quality_events.append(dict(event))
+
+    def get_quality_events(self) -> List[JsonDict]:
+        """Return quality events in chronological order."""
+        with self._lock:
+            return [dict(e) for e in list(self._quality_events)]
+
+    # ----------------------------
     # Quit signalling
     # ----------------------------
 
@@ -520,6 +540,48 @@ class StatusStore:
         }
 
     @staticmethod
+    def _normalize_quality(raw: Any) -> Dict[str, Any]:
+        """Return quality section in a stable shape."""
+        thresholds_default = {
+            "ringing": 0.65,
+            "banding": 0.65,
+            "cadence_jitter": 0.65,
+            "duplicate_ratio": 0.65,
+            "motion_blur": 0.65,
+        }
+        if isinstance(raw, dict):
+            thresholds_raw = raw.get("thresholds") if isinstance(raw.get("thresholds"), dict) else {}
+            thresholds = {
+                k: float(thresholds_raw.get(k, v)) if isinstance(thresholds_raw.get(k, v), (int, float)) else float(v)
+                for k, v in thresholds_default.items()
+            }
+            active_raw = raw.get("active_problems")
+            active = [str(v) for v in active_raw if isinstance(v, str)] if isinstance(active_raw, list) else []
+            return {
+                "enabled": bool(raw.get("enabled", False)),
+                "sample_every_frames": max(1, int(raw.get("sample_every_frames", 3))) if isinstance(raw.get("sample_every_frames", 3), (int, float)) else 3,
+                "thresholds": thresholds,
+                "ringing": float(raw.get("ringing", 0.0)) if isinstance(raw.get("ringing", 0.0), (int, float)) else 0.0,
+                "banding": float(raw.get("banding", 0.0)) if isinstance(raw.get("banding", 0.0), (int, float)) else 0.0,
+                "cadence_jitter": float(raw.get("cadence_jitter", 0.0)) if isinstance(raw.get("cadence_jitter", 0.0), (int, float)) else 0.0,
+                "duplicate_ratio": float(raw.get("duplicate_ratio", 0.0)) if isinstance(raw.get("duplicate_ratio", 0.0), (int, float)) else 0.0,
+                "motion_blur": float(raw.get("motion_blur", 0.0)) if isinstance(raw.get("motion_blur", 0.0), (int, float)) else 0.0,
+                "active_problems": active,
+            }
+
+        return {
+            "enabled": False,
+            "sample_every_frames": 3,
+            "thresholds": thresholds_default,
+            "ringing": 0.0,
+            "banding": 0.0,
+            "cadence_jitter": 0.0,
+            "duplicate_ratio": 0.0,
+            "motion_blur": 0.0,
+            "active_problems": [],
+        }
+
+    @staticmethod
     def _default_payload(*, reason: str, grid_rows: int, grid_cols: int, show_tile_numbers: bool) -> JsonDict:
         """
         Create a well-formed “error/empty” payload used before the analyzer produces data.
@@ -558,6 +620,23 @@ class StatusStore:
                     "score_by_block": {"8": None, "16": None},
                     "sample_every_frames": 25,
                     "downscale_width": 640,
+                },
+                "quality": {
+                    "enabled": False,
+                    "sample_every_frames": 3,
+                    "thresholds": {
+                        "ringing": 0.65,
+                        "banding": 0.65,
+                        "cadence_jitter": 0.65,
+                        "duplicate_ratio": 0.65,
+                        "motion_blur": 0.65,
+                    },
+                    "ringing": 0.0,
+                    "banding": 0.0,
+                    "cadence_jitter": 0.0,
+                    "duplicate_ratio": 0.0,
+                    "motion_blur": 0.0,
+                    "active_problems": [],
                 },
             },
             "audio": {"state": "ERROR", "reason": "not_initialized", "level": 0.0, "rms": 0.0, "peak": 0.0, "baseline": 0.0, "threshold": 0.0, "detected": False, "timestamp": float(now)},
